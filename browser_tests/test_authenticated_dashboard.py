@@ -37,7 +37,7 @@ class AuthenticatedBrowserTests(unittest.TestCase):
    self.assertIn("instructor",page.locator("#identity").inner_text())
    self.assertFalse(page.locator("#role").count())
    # A forged learner identity in the request body cannot reduce or elevate server identity.
-   csrf=page.evaluate("csrf")
+   csrf=page.evaluate("async () => (await (await fetch('/api/me')).json()).csrf")
    result=page.evaluate("""async csrf => {let r=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({actor:{username:'attacker',role:'learner'},scenario_id:'identity-01',evidence:{}})});return r.status}""",csrf)
    self.assertEqual(result,403)
    no_csrf=page.evaluate("""async () => {let r=await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});return r.status}""")
