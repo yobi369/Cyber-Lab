@@ -92,12 +92,19 @@ class Handler(BaseHTTPRequestHandler):
   except AuthorizationError as e:return self.send_json(403,{"error":str(e)})
   except (ValueError,TypeError) as e:return self.send_json(400,{"error":str(e)})
  def do_POST(self):
+  origin=self.headers.get('Origin')
+  if origin and origin!='http://'+self.headers.get('Host',''):return self.send_json(403,{'error':'origin validation failed'})
   path=urlparse(self.path).path
   try:data=self.body()
   except (ValueError,json.JSONDecodeError) as e:return self.send_json(400,{"error":str(e)})
   if path=="/api/login":
+   remote=self.client_address[0]
+   if IDENTITY.login_locked(remote):return self.send_json(429,{"error":"too many login attempts; wait five minutes"})
    result=IDENTITY.authenticate(str(data.get("username","")),str(data.get("password","")))
-   if not result:return self.send_json(401,{"error":"invalid username or password"})
+   if not result:
+    IDENTITY.record_login_failure(remote)
+    return self.send_json(401,{"error":"invalid username or password"})
+   IDENTITY.clear_login_failures(remote)
    return self.send_json(200,{"user":{"username":result["username"],"role":result["role"]},"csrf":result["csrf"]},{"Set-Cookie":f"sentinel_session={result['token']}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_TTL}"})
   token=cookie_token(self);s=IDENTITY.session(token)
   if not s:return self.send_json(401,{"error":"authentication required"})
