@@ -38,6 +38,15 @@ class IdentityTests(unittest.TestCase):
     login=self.store.authenticate("mfauser","long-enough-password","123456")
     self.assertIsNotNone(login)
     self.assertIsNone(self.store.authenticate("mfauser","long-enough-password","123456"))
+ def test_mfa_seed_key_rotation_preserves_authentication(self):
+  self.store.create_user("rotate-user","long-enough-password","learner")
+  secret=new_totp_secret();old="ab"*32;new="cd"*32
+  with patch.dict(os.environ,{"SENTINEL_MFA_ENCRYPTION_KEY":old}):self.store.set_totp_secret("rotate-user",secret)
+  self.assertEqual(self.store.rotate_mfa_encryption_key(old,new),1)
+  with patch.dict(os.environ,{"SENTINEL_MFA_ENCRYPTION_KEY":new}),patch("identity.matching_totp_counter",return_value=98765):
+   self.assertIsNotNone(self.store.authenticate("rotate-user","long-enough-password","123456"))
+  with patch.dict(os.environ,{"SENTINEL_MFA_ENCRYPTION_KEY":old}):
+   self.assertIsNone(self.store.authenticate("rotate-user","long-enough-password","123456"))
  def test_require_mfa_blocks_accounts_without_enrollment(self):
   self.store.create_user("nomfa","long-enough-password","learner")
   with patch.dict(os.environ,{"SENTINEL_REQUIRE_MFA":"1"}):
