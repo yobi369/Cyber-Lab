@@ -47,18 +47,29 @@ class AuthorizationError(PermissionError): pass
 
 class TrainingPlatform:
  def __init__(self,audit:AuditChain|None=None):
-  self.audit=audit or AuditChain(); self.submissions=[]; self.assessments=[]
+  self.audit=audit or AuditChain(); self.submissions=[]; self.assessments=[]; self.custom_scenarios=[]
  @staticmethod
  def require(actor:Actor,permission:str):
   if permission not in PERMISSIONS[actor.role]: raise AuthorizationError(f"{actor.role.value} cannot perform {permission}")
  def scenarios(self,actor):
-  self.require(actor,"scenario:read"); return [dict(s) for s in SCENARIOS]
+  self.require(actor,"scenario:read"); return [dict(s) for s in (*SCENARIOS,*self.custom_scenarios)]
  def create_scenario(self,actor,scenario):
   self.require(actor,"scenario:create")
-  raise NotImplementedError("Custom scenario authoring is staged; built-in scenarios are read-only.")
+  fields=("title","category","level","brief","safe_boundary")
+  item={key:str(scenario.get(key,"")).strip() for key in fields}
+  if any(not value for value in item.values()): raise ValueError("all scenario fields are required")
+  if any(len(item[key])>1000 for key in fields): raise ValueError("scenario field exceeds 1000 characters")
+  objectives=[str(x).strip() for x in scenario.get("objectives",[]) if str(x).strip()]
+  artifacts=[str(x).strip() for x in scenario.get("artifacts",[]) if str(x).strip()]
+  if not 2<=len(objectives)<=8 or not 1<=len(artifacts)<=10: raise ValueError("provide 2–8 objectives and 1–10 evidence artifacts")
+  if any(len(x)>500 for x in objectives+artifacts): raise ValueError("objective or artifact exceeds 500 characters")
+  item.update({"id":"custom-%03d"%(len(self.custom_scenarios)+1),"objectives":objectives,"artifacts":artifacts})
+  self.custom_scenarios.append(item)
+  self.audit.append(actor.username,actor.role.value,"scenario.created",{"scenario_id":item["id"],"title":item["title"]})
+  return dict(item)
  def submit(self,actor,scenario_id,evidence):
   self.require(actor,"submission:create")
-  if scenario_id not in {s["id"] for s in SCENARIOS}: raise ValueError("unknown scenario")
+  if scenario_id not in {s["id"] for s in (*SCENARIOS,*self.custom_scenarios)}: raise ValueError("unknown scenario")
   fields=("observations","timeline","actions","rationale","confidence","remediation")
   cleaned={k:str(evidence.get(k,"")).strip() for k in fields}
   if any(not v for v in cleaned.values()): raise ValueError("all evidence fields are required")
