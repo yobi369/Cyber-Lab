@@ -40,7 +40,7 @@ class PlatformTests(unittest.TestCase):
   self.p.grade(self.reviewer,item["id"],scores,"Evidence supports this conclusion.")
   self.assertEqual(self.p.moderation_report(self.auditor,item["id"])["status"],"awaiting_second_review")
   with self.assertRaises(ValueError):self.p.grade(self.reviewer,item["id"],scores,"Duplicate review")
-  other={k:2 for k in RUBRIC};other["reasoning"]=1
+  other={k:2 for k in RUBRIC}
   self.p.grade(self.reviewer2,item["id"],other,"Second independent review.")
   report=self.p.moderation_report(self.auditor,item["id"])
   self.assertEqual(report["reviews"],2);self.assertEqual(report["status"],"moderated")
