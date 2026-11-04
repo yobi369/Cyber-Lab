@@ -23,6 +23,7 @@ class IdentityStore:
     token_hash TEXT PRIMARY KEY, username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
     csrf_hash TEXT NOT NULL, csrf_token TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
    CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
+   CREATE TABLE IF NOT EXISTS login_attempts(ip_hash TEXT PRIMARY KEY, window_start INTEGER NOT NULL, failures INTEGER NOT NULL);
    """)
  def connect(self):
   db=sqlite3.connect(self.path,timeout=10)
@@ -65,5 +66,18 @@ class IdentityStore:
  def logout(self,token):
   if token:
    with self.connect() as db:db.execute("DELETE FROM sessions WHERE token_hash=?",(hashlib.sha256(token.encode()).hexdigest(),))
+ def login_locked(self,remote,limit=8,window=300):
+  key=hashlib.sha256(remote.encode()).hexdigest();now=int(time.time())
+  with self.connect() as db:row=db.execute("SELECT * FROM login_attempts WHERE ip_hash=?",(key,)).fetchone()
+  return bool(row and now-row["window_start"]<window and row["failures"]>=limit)
+ def record_login_failure(self,remote,window=300):
+  key=hashlib.sha256(remote.encode()).hexdigest();now=int(time.time())
+  with self.connect() as db:
+   row=db.execute("SELECT * FROM login_attempts WHERE ip_hash=?",(key,)).fetchone()
+   if not row or now-row["window_start"]>=window:db.execute("INSERT OR REPLACE INTO login_attempts VALUES(?,?,1)",(key,now))
+   else:db.execute("UPDATE login_attempts SET failures=failures+1 WHERE ip_hash=?",(key,))
+ def clear_login_failures(self,remote):
+  key=hashlib.sha256(remote.encode()).hexdigest()
+  with self.connect() as db:db.execute("DELETE FROM login_attempts WHERE ip_hash=?",(key,))
  def list_users(self):
   with self.connect() as db:return [dict(r) for r in db.execute("SELECT username,role,active,created_at FROM users ORDER BY username")]
