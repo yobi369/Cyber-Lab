@@ -2,13 +2,14 @@
 from __future__ import annotations
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from http.cookies import SimpleCookie
-from urllib.parse import urlparse
+from urllib.parse import urlparse,parse_qs
 import json,os,secrets,base64
 from identity import IdentityStore,SESSION_TTL
 from audit_chain import AuditChain
 from storage import TrainingStore
 from training_platform import Actor,Role,TrainingPlatform,AuthorizationError
 from security_controls import tls_context,secure_cookie_attributes
+from oidc import oidc_client_from_env,OIDCError
 
 DB=os.getenv("SENTINEL_DB","sentinel-lab.sqlite3")
 IDENTITY=IdentityStore(DB)
@@ -25,7 +26,7 @@ main{max-width:1160px;margin:28px auto;padding:0 20px}.brand{font-weight:850;let
 input,select,textarea,button{font:inherit;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:#0c1828;color:var(--text)}input,textarea{width:100%}textarea{min-height:76px}button{background:var(--accent);color:#061a1a;font-weight:750;border:0;cursor:pointer}button.secondary{background:#203651;color:var(--text);border:1px solid var(--line)}.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.hidden{display:none!important}#message{min-height:24px;color:var(--accent);margin:12px 0}.notice{padding:12px;border:1px solid #705b31;background:#2a2419;color:#f3dca8;border-radius:12px;margin:18px 0}
 footer{max-width:1160px;margin:26px auto;padding:0 20px 24px;color:var(--muted);font-size:12px}@media(max-width:740px){.layout,.stats{grid-template-columns:1fr}header{display:block}}
 </style></head><body><header><div><div class="brand">◈ SENTINEL <b>LAB</b></div><div class="muted">Defensive cybersecurity training workspace</div></div><div id="account" class="row hidden"><span id="identity"></span><button id="logout" class="secondary">Sign out</button></div></header>
-<main><section id="login" class="panel"><div class="eyebrow">Secure access</div><h1>Sign in to Sentinel Lab</h1><p class="muted">Accounts and roles are provisioned by an administrator.</p><form id="loginForm"><label>Username</label><input name="username" autocomplete="username" required maxlength="80"><label>Password</label><input name="password" type="password" autocomplete="current-password" required maxlength="256"><label>Authenticator code (required when MFA is enrolled)</label><input name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"><p><button>Sign in</button></p></form></section>
+<main><section id="login" class="panel"><div class="eyebrow">Secure access</div><h1>Sign in to Sentinel Lab</h1><p class="muted">Accounts and roles are provisioned by an administrator.</p><form id="loginForm"><label>Username</label><input name="username" autocomplete="username" required maxlength="80"><label>Password</label><input name="password" type="password" autocomplete="current-password" required maxlength="256"><label>Authenticator code (required when MFA is enrolled)</label><input name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"><p><button>Sign in</button></p></form><p><a class="secondary" href="/auth/oidc/start">Continue with enterprise SSO</a></p></section>
 <section id="workspace" class="hidden"><div class="eyebrow">Training operations / authenticated session</div><h1>Incident response workspace</h1><div class="muted">Investigate synthetic incidents. Submit evidence. Learn through structured feedback.</div>
 <div class="notice">SIMULATION ONLY · Synthetic evidence. No scanning, malware, remote access, or real system changes.</div>
 <div class="stats"><div class="stat"><span class="muted">Scenario library</span><strong id="scenarioCount">—</strong></div><div class="stat"><span class="muted">Evidence submissions</span><strong id="submissionCount">—</strong></div><div class="stat"><span class="muted">Audit integrity</span><strong id="auditState">Pending</strong><span id="auditMeta" class="muted"></span></div></div>
@@ -73,6 +74,24 @@ class Handler(BaseHTTPRequestHandler):
   return json.loads(self.rfile.read(size))
  def do_GET(self):
   path=urlparse(self.path)
+  if path.path=="/auth/oidc/start":
+   try:
+    client=oidc_client_from_env();url,state,nonce,verifier=client.begin()
+    IDENTITY.create_oidc_transaction(state,nonce,verifier)
+    self.send_response(302);self.send_header("Location",url);self.send_header("Cache-Control","no-store");self.end_headers();return
+   except OIDCError as exc:return self.send_json(503,{"error":str(exc)})
+  if path.path=="/auth/oidc/callback":
+   query=parse_qs(path.query);state=query.get("state",[""])[0];code=query.get("code",[""])[0]
+   transaction=IDENTITY.consume_oidc_transaction(state) if state else None
+   if not transaction:return self.send_json(400,{"error":"OIDC state invalid, expired, or already used"})
+   try:
+    result=oidc_client_from_env().complete(code,transaction["code_verifier"],transaction["nonce"])
+    session=IDENTITY.create_oidc_session(result["issuer"],result["subject"])
+    if not session:return self.send_json(403,{"error":"identity is not linked to a provisioned Sentinel account"})
+    self.send_response(302);self.send_header("Location","/");self.send_header("Cache-Control","no-store")
+    self.send_header("Set-Cookie",f"sentinel_session={session['token']}; {secure_cookie_attributes()}; Max-Age={SESSION_TTL}")
+    self.end_headers();return
+   except (OIDCError,ValueError) as exc:return self.send_json(401,{"error":str(exc)})
   if path.path=="/":
    nonce=base64.urlsafe_b64encode(secrets.token_bytes(24)).decode().rstrip('=');html=PAGE.replace('<style>','<style nonce="'+nonce+'">').replace('<script>','<script nonce="'+nonce+'">');body=html.encode();self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.send_header("Content-Length",str(len(body)));self.send_header("Content-Security-Policy","default-src 'self'; style-src 'nonce-"+nonce+"'; script-src 'nonce-"+nonce+"'; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Referrer-Policy","no-referrer");self.send_header("Cache-Control","no-store");self.end_headers();self.wfile.write(body);return
   if path.path=="/api/me":
