@@ -23,7 +23,11 @@ Sentinel Lab is a local-first training platform for defensive incident response,
 
 ## First-time setup
 
-Requires Python 3.11+.
+Requires Python 3.11+. Install the runtime security integrations (OIDC, cryptography, SQLCipher and S3 client):
+
+```bash
+python -m pip install -r requirements-security.txt
+```
 
 Create a dedicated local database and provision your first instructor account from a trusted terminal:
 
@@ -56,7 +60,7 @@ Install security dependencies with `python -m pip install -r requirements-securi
 python manage_users.py --db sentinel-lab.sqlite3 enroll-mfa brian
 ```
 
-The command displays an authenticator URI and requires a valid first code before storing the encrypted seed. Set `SENTINEL_REQUIRE_MFA=1` to block accounts that have not enrolled. Keep the MFA encryption key separate from database and backup keys.
+The command displays an authenticator URI and requires a valid first code before storing the encrypted seed. Set `SENTINEL_REQUIRE_MFA=1` to block accounts that have not enrolled. Keep the MFA encryption key separate from database and backup keys. Rotate it with `SENTINEL_MFA_OLD_ENCRYPTION_KEY`, a new `SENTINEL_MFA_ENCRYPTION_KEY`, and `python manage_users.py --db sentinel-lab.sqlite3 rotate-mfa-key`.
 
 ## Enterprise SSO
 Configure `SENTINEL_OIDC_ISSUER`, `SENTINEL_OIDC_CLIENT_ID`, `SENTINEL_OIDC_CLIENT_SECRET`, and `SENTINEL_OIDC_REDIRECT_URI` from a secret manager. Optionally set `SENTINEL_OIDC_TENANT_ID` and `SENTINEL_OIDC_REQUIRE_MFA=1`. Link the verified immutable subject to a pre-provisioned local account:
