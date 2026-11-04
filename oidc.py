@@ -74,4 +74,13 @@ class OIDCClient:
         subject=claims.get("sub")
         if not isinstance(subject,str) or not subject or len(subject)>512:
             raise OIDCError("OIDC subject is invalid")
+        if __import__("os").getenv("SENTINEL_OIDC_REQUIRE_MFA")=="1" and "mfa" not in claims.get("amr",[]):
+            raise OIDCError("identity provider did not assert MFA")
         return {"issuer":self.issuer,"subject":subject,"claims":claims}
+
+def oidc_client_from_env():
+    import os
+    names=("SENTINEL_OIDC_ISSUER","SENTINEL_OIDC_CLIENT_ID","SENTINEL_OIDC_CLIENT_SECRET","SENTINEL_OIDC_REDIRECT_URI")
+    values=[os.getenv(name,"") for name in names]
+    if not all(values): raise OIDCError("enterprise SSO is not configured")
+    return OIDCClient(*values,tenant_id=os.getenv("SENTINEL_OIDC_TENANT_ID"))
