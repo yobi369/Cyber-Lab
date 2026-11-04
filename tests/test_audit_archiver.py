@@ -9,7 +9,7 @@ class AuditArchiverTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as d:
    path=Path(d)/"audit.jsonl";chain=AuditChain(path);chain.append("tester","auditor","first")
    client=MagicMock();client.get_bucket_versioning.return_value={"Status":"Enabled"}
-   client.get_object_lock_configuration.return_value={"ObjectLockConfiguration":{"ObjectLockRule":{"DefaultRetention":{"Days":365}}}}
+   client.get_object_lock_configuration.return_value={"ObjectLockConfiguration":{"ObjectLockEnabled":"Enabled","ObjectLockRule":{"DefaultRetention":{"Mode":"COMPLIANCE","Days":365}}}}
    worker=AuditArchiveWorker(path,"bucket","audit-secret-material-at-least-32-characters","key-v1",30,300,client)
    first=worker.archive_once();self.assertIsNotNone(first)
    self.assertIsNone(worker.archive_once())
