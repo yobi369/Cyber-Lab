@@ -35,6 +35,13 @@ class AuthenticatedBrowserTests(unittest.TestCase):
    self.assertIn("style-src 'nonce-",policy)
    self.assertNotIn("unsafe-inline",policy)
    self.assertNotIn("unsafe-eval",policy)
+   html=response.text()
+   import re
+   nonce=re.search(r'<script nonce="([^"]+)"',html).group(1)
+   self.assertIn("script-src 'nonce-"+nonce+"'",policy)
+   second=page.request.get("http://127.0.0.1:8765/")
+   second_nonce=re.search(r'<script nonce="([^"]+)"',second.text()).group(1)
+   self.assertNotEqual(nonce,second_nonce)
    self.assertFalse(page.locator("#workspace").is_visible())
    page.locator('input[name="username"]').fill("browser-teacher")
    page.locator('input[name="password"]').fill("browser-test-password-long")
