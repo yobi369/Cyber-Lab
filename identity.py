@@ -49,12 +49,27 @@ class IdentityStore:
   return {"username":username,"role":role}
  def set_totp_secret(self,username,secret):
   key=os.getenv("SENTINEL_MFA_ENCRYPTION_KEY","")
-  if len(key)!=64: raise RuntimeError("SENTINEL_MFA_ENCRYPTION_KEY must be a 256-bit hex key")
+  if len(key)!=64 or any(ch not in "0123456789abcdefABCDEF" for ch in key): raise RuntimeError("SENTINEL_MFA_ENCRYPTION_KEY must be a 256-bit hex key")
   from cryptography.hazmat.primitives.ciphers.aead import AESGCM
   nonce=secrets.token_bytes(12);encrypted=nonce+AESGCM(bytes.fromhex(key)).encrypt(nonce,secret.encode(),username.encode())
   with self.connect() as db:
    cur=db.execute("UPDATE users SET mfa_secret=?,mfa_last_counter=NULL WHERE username=? AND active=1",(encrypted,username))
    if cur.rowcount!=1: raise ValueError("active user not found")
+ def rotate_mfa_encryption_key(self,old_key,new_key):
+  for key in (old_key,new_key):
+   if len(key)!=64 or any(ch not in "0123456789abcdefABCDEF" for ch in key): raise ValueError("MFA keys must be 256-bit hex values")
+  if old_key==new_key: raise ValueError("new MFA key must differ from old key")
+  from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+  old_cipher,new_cipher=AESGCM(bytes.fromhex(old_key)),AESGCM(bytes.fromhex(new_key));changed=0
+  with self.connect() as db:
+   rows=db.execute("SELECT username,mfa_secret FROM users WHERE mfa_secret IS NOT NULL").fetchall()
+   replacements=[]
+   for row in rows:
+    encrypted=row["mfa_secret"];secret=old_cipher.decrypt(encrypted[:12],encrypted[12:],row["username"].encode())
+    nonce=secrets.token_bytes(12);replacement=nonce+new_cipher.encrypt(nonce,secret,row["username"].encode())
+    replacements.append((replacement,row["username"]))
+   for replacement,username in replacements: db.execute("UPDATE users SET mfa_secret=? WHERE username=?",(replacement,username));changed+=1
+  return changed
  def authenticate(self,username,password,otp=None):
   with self.connect() as db: row=db.execute("SELECT * FROM users WHERE username=? AND active=1",(username,)).fetchone()
   if row is None:
@@ -69,7 +84,10 @@ class IdentityStore:
    key=os.getenv("SENTINEL_MFA_ENCRYPTION_KEY","")
    if len(key)!=64 or not otp: return None
    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-   encrypted=row["mfa_secret"];secret=AESGCM(bytes.fromhex(key)).decrypt(encrypted[:12],encrypted[12:],username.encode()).decode()
+   if any(ch not in "0123456789abcdefABCDEF" for ch in key): return None
+   encrypted=row["mfa_secret"]
+   try: secret=AESGCM(bytes.fromhex(key)).decrypt(encrypted[:12],encrypted[12:],username.encode()).decode()
+   except Exception: return None
    matched_counter=matching_totp_counter(secret,str(otp))
    if matched_counter is None: return None
   token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32);now=int(time.time())
