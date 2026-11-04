@@ -93,6 +93,7 @@ class TrainingPlatform:
   if set(scores)!=set(RUBRIC) or any(type(v)is not int or not 0<=v<=4 for v in scores.values()):raise ValueError("provide an integer score from 0 to 4 for every rubric dimension")
   if not feedback.strip() or len(feedback)>2000:raise ValueError("feedback is required and must be at most 2000 characters")
   prior=self.store.assessments(submission_id)
+  if len(prior)>=2:raise ValueError("submission has reached the two-review moderation limit")
   if any(x["reviewer"]==actor.username for x in prior):raise ValueError("a reviewer may assess a submission only once")
   round_number=len(prior)+1
   aid=self.store.add_assessment(submission_id,actor.username,scores,feedback.strip(),round_number)
@@ -105,7 +106,8 @@ class TrainingPlatform:
   if len(rows)<2:return {"status":"awaiting_second_review","reviews":len(rows)}
   a,b=rows[0],rows[1];diff={k:abs(a["scores"][k]-b["scores"][k]) for k in RUBRIC}
   agreement=sum(v==0 for v in diff.values())
-  return {"status":"moderated" if max(diff.values())<=1 else "adjudication_required","reviews":2,"dimension_differences":diff,"exact_dimension_agreement":agreement,"agreement_rate":agreement/len(RUBRIC),"total_score_difference":abs(a["total"]-b["total"])}
+  within_one=sum(v<=1 for v in diff.values())
+  return {"status":"moderated" if max(diff.values())<=1 else "adjudication_required","reviews":2,"dimension_differences":diff,"exact_dimension_agreement":agreement,"agreement_rate":agreement/len(RUBRIC),"within_one_agreement_rate":within_one/len(RUBRIC),"mean_absolute_dimension_difference":sum(diff.values())/len(RUBRIC),"total_score_difference":abs(a["total"]-b["total"])}
  def learner_assessments(self,actor):
   self.require(actor,"assessment:read")
   own={s["id"] for s in self.store.submissions(actor.username)}
