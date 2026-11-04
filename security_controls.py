@@ -123,6 +123,7 @@ def backup_sqlite(source,destination,encryption_key=None):
     target=Path(destination)
     target.parent.mkdir(parents=True,exist_ok=True)
     tmp=target.with_suffix(target.suffix+".tmp")
+    if tmp.exists(): raise FileExistsError(str(tmp))
     try:
         dst=database_connect(str(tmp))
         try: src.backup(dst)
@@ -179,9 +180,13 @@ class S3ObjectLockArchive:
     def verify_bucket(self):
         if self.client.get_bucket_versioning(Bucket=self.bucket).get("Status")!="Enabled":
             raise RuntimeError("bucket versioning must be enabled")
-        config=self.client.get_object_lock_configuration(Bucket=self.bucket)
-        if not config.get("ObjectLockConfiguration",{}).get("ObjectLockRule"):
-            raise RuntimeError("S3 Object Lock default retention must be configured")
+        config=self.client.get_object_lock_configuration(Bucket=self.bucket).get("ObjectLockConfiguration",{})
+        rule=config.get("ObjectLockRule",{})
+        retention=rule.get("DefaultRetention",{})
+        if config.get("ObjectLockEnabled")!="Enabled" or not rule:
+            raise RuntimeError("S3 Object Lock must be enabled with a default retention rule")
+        if retention.get("Mode") not in {"COMPLIANCE","GOVERNANCE"} or not (retention.get("Days") or retention.get("Years")):
+            raise RuntimeError("S3 Object Lock default retention mode and duration are required")
     def archive(self,payload):
         import datetime
         digest=hashlib.sha256(payload).hexdigest()
