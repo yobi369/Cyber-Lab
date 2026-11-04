@@ -45,6 +45,7 @@ class PlatformTests(unittest.TestCase):
   report=self.p.moderation_report(self.auditor,item["id"])
   self.assertEqual(report["reviews"],2);self.assertEqual(report["status"],"moderated")
   self.assertGreater(report["agreement_rate"],0)
+  with self.assertRaises(ValueError):self.p.grade(Actor("reviewer3",Role.REVIEWER),item["id"],scores,"Third review not allowed.")
  def test_learner_assessment_privacy_and_invalid_input(self):
   item=self.p.submit(self.learner,"identity-01",self.evidence())
   self.p.grade(self.reviewer,item["id"],{k:2 for k in RUBRIC},"Feedback tied to artifacts.")
