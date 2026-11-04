@@ -44,7 +44,7 @@ class PlatformTests(unittest.TestCase):
   self.p.grade(self.reviewer2,item["id"],other,"Second independent review.")
   report=self.p.moderation_report(self.auditor,item["id"])
   self.assertEqual(report["reviews"],2);self.assertEqual(report["status"],"moderated")
-  self.assertGreater(report["agreement_rate"],0)
+  self.assertEqual(report["agreement_rate"],0.0);self.assertEqual(report["within_one_agreement_rate"],1.0)
   with self.assertRaises(ValueError):self.p.grade(Actor("reviewer3",Role.REVIEWER),item["id"],scores,"Third review not allowed.")
  def test_learner_assessment_privacy_and_invalid_input(self):
   item=self.p.submit(self.learner,"identity-01",self.evidence())
