@@ -25,6 +25,10 @@ class PlatformTests(unittest.TestCase):
   revised=self.scenario();revised["brief"]="Updated synthetic brief."
   v2=self.p.edit_scenario(self.instructor,draft["id"],revised)
   self.assertEqual(v2["version"],2);self.assertEqual(v2["status"],"draft")
+  learner_versions=self.p.scenarios(self.learner)
+  self.assertTrue(any(x["id"]==draft["id"] and x["version"]==1 for x in learner_versions))
+  submission=self.p.submit(self.learner,draft["id"],self.evidence())
+  self.assertEqual(submission["scenario_version"],1)
   self.assertEqual(self.p.store.scenario(draft["id"],1)["brief"],"Synthetic message reported.")
  def test_submissions_survive_restart(self):
   item=self.p.submit(self.learner,"identity-01",self.evidence())
