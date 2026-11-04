@@ -8,6 +8,9 @@ Sentinel Lab is a local-first training platform for defensive incident response,
 - SQLite-backed users, sessions, scenarios, scenario versions, submissions, and assessments.
 - Server-side role assignment; browser requests cannot select or impersonate a role.
 - PBKDF2-HMAC-SHA256 password hashes, opaque HttpOnly/SameSite session cookies, CSRF tokens, same-origin POST checks, and persistent login throttling.
+- Optional per-account TOTP MFA with encrypted authenticator seeds; terminal enrollment and login challenge are implemented.
+- Nonce-based Content Security Policy, TLS 1.2+ server context, and production fail-closed Secure-cookie/TLS configuration.
+- SQLCipher-only encrypted connection helper, consistent SQLite backup, AES-256-GCM backup encryption/restore, and an S3 Object Lock COMPLIANCE archive adapter.
 - Out-of-band account provisioning; no public registration or browser role selector.
 - Scenario lifecycle: instructor drafts, edits create immutable new versions, and publishing is explicit.
 - Synthetic incident datasets and facilitator injects in [FACILITATOR_GUIDE.md](FACILITATOR_GUIDE.md).
@@ -43,8 +46,22 @@ The original safe command simulator is separate:
 python admin_lab.py
 ```
 
+## MFA enrollment
+
+Install security dependencies with `python -m pip install -r requirements-security.txt`. Set `SENTINEL_MFA_ENCRYPTION_KEY` to a 64-character hex key from a secret manager, then enroll each account from a trusted terminal:
+
+```bash
+python manage_users.py --db sentinel-lab.sqlite3 enroll-mfa brian
+```
+
+The command displays an authenticator URI and requires a valid first code before storing the encrypted seed. Set `SENTINEL_REQUIRE_MFA=1` to block accounts that have not enrolled. Keep the MFA encryption key separate from database and backup keys.
+
 ## Data persistence
 SQLite stores identities, sessions, scenario versions and lifecycle state, learner submissions, and reviewer assessments. Use a consistent backup procedure for both the SQLite database (including WAL state; use SQLite's backup API or stop the app cleanly) and the JSONL audit log. Never copy only the main database file while WAL writes are active.
+
+## Backup and restore helpers
+
+Use `backup_sqlite()` and `restore_sqlite()` from `security_controls.py` for a consistent online SQLite snapshot and integrity-checked restore. Optional AES-256-GCM encryption requires `cryptography` and a 32-byte key. These helpers are tested with synthetic databases; a production recovery drill is still required. SQLCipher connection support is provided but the existing identity and training stores have not yet migrated to it.
 
 ## Signed audit checkpoints
 Set a high-entropy key supplied by a secret manager (do not commit it):
@@ -76,9 +93,9 @@ python -m unittest discover -s browser_tests -v
 GitHub Actions runs Python 3.11/3.12 unit tests and a real Chromium authentication/CSRF integration job.
 
 ## Security status and limitations
-This is a hardened local prototype, not a production multi-user deployment. Before public or organizational use, complete TLS and Secure cookies, OIDC/SSO or enterprise identity integration, session revocation and password reset, MFA, database encryption and tenant isolation, tested backup/restore, rate-limit monitoring, dependency and SAST scanning, independent penetration testing, and external immutable audit retention. Inline UI styling/scripts currently require CSP unsafe-inline allowances; replace them with nonces or hashes before a public deployment.
+This is a hardened local prototype, not a production multi-user deployment. Before public or organizational use, complete enterprise OIDC/SSO, password reset and recovery, SQLCipher migration of both stores, tenant isolation, real-bucket Object Lock integration, witnessed backup/restore, rate-limit monitoring, dependency and SAST scanning, and independent penetration testing plus retest. TOTP MFA, TLS startup support, Secure cookies, and nonce-based CSP are implemented, but production deployment still requires secret/certificate provisioning and verification. The S3 adapter is not yet connected to a scheduled checkpoint exporter.
 
-Read [THREAT_MODEL.md](THREAT_MODEL.md) and [SECURITY_TEST_PLAN.md](SECURITY_TEST_PLAN.md) before use.
+Read [THREAT_MODEL.md](THREAT_MODEL.md), [SECURITY_TEST_PLAN.md](SECURITY_TEST_PLAN.md), and [SECURE_DEPLOYMENT.md](SECURE_DEPLOYMENT.md) before use.
 
 ## License
 No license is currently declared. All rights remain with the repository owner unless a license is added.
