@@ -4,7 +4,8 @@ Accounts are provisioned out of band with manage_users.py. The browser never
 chooses a role. Passwords use PBKDF2-HMAC-SHA256 with per-user salts.
 """
 from __future__ import annotations
-import hashlib, hmac, secrets, sqlite3, time, os\nfrom security_controls import verify_totp
+import hashlib, hmac, secrets, sqlite3, time, os
+from security_controls import verify_totp
 from pathlib import Path
 
 ITERATIONS=310_000
@@ -24,7 +25,9 @@ class IdentityStore:
     csrf_hash TEXT NOT NULL, csrf_token TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
    CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
    CREATE TABLE IF NOT EXISTS login_attempts(ip_hash TEXT PRIMARY KEY, window_start INTEGER NOT NULL, failures INTEGER NOT NULL);
-   """)\n   columns={row[1] for row in db.execute("PRAGMA table_info(users)")}\n   if "mfa_secret" not in columns: db.execute("ALTER TABLE users ADD COLUMN mfa_secret BLOB")
+   """)
+   columns={row[1] for row in db.execute("PRAGMA table_info(users)")}
+   if "mfa_secret" not in columns: db.execute("ALTER TABLE users ADD COLUMN mfa_secret BLOB")
  def connect(self):
   db=sqlite3.connect(self.path,timeout=10)
   db.row_factory=sqlite3.Row
@@ -42,13 +45,29 @@ class IdentityStore:
   with self.connect() as db:
    db.execute("INSERT INTO users(username,password_hash,salt,role,created_at) VALUES(?,?,?,?,?)",(username,digest,salt,role,int(time.time())))
   return {"username":username,"role":role}
- def set_totp_secret(self,username,secret):\n  key=os.getenv("SENTINEL_MFA_ENCRYPTION_KEY","")\n  if len(key)!=64: raise RuntimeError("SENTINEL_MFA_ENCRYPTION_KEY must be a 256-bit hex key")\n  from cryptography.hazmat.primitives.ciphers.aead import AESGCM\n  nonce=secrets.token_bytes(12);encrypted=nonce+AESGCM(bytes.fromhex(key)).encrypt(nonce,secret.encode(),username.encode())\n  with self.connect() as db:\n   cur=db.execute("UPDATE users SET mfa_secret=? WHERE username=? AND active=1",(encrypted,username))\n   if cur.rowcount!=1: raise ValueError("active user not found")\n def authenticate(self,username,password,otp=None):
+ def set_totp_secret(self,username,secret):
+  key=os.getenv("SENTINEL_MFA_ENCRYPTION_KEY","")
+  if len(key)!=64: raise RuntimeError("SENTINEL_MFA_ENCRYPTION_KEY must be a 256-bit hex key")
+  from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+  nonce=secrets.token_bytes(12);encrypted=nonce+AESGCM(bytes.fromhex(key)).encrypt(nonce,secret.encode(),username.encode())
+  with self.connect() as db:
+   cur=db.execute("UPDATE users SET mfa_secret=? WHERE username=? AND active=1",(encrypted,username))
+   if cur.rowcount!=1: raise ValueError("active user not found")
+ def authenticate(self,username,password,otp=None):
   with self.connect() as db: row=db.execute("SELECT * FROM users WHERE username=? AND active=1",(username,)).fetchone()
   if row is None:
    self._derive(password or "x",b"\0"*16)
    return None
   candidate=self._derive(password,row["salt"])
-  if not hmac.compare_digest(candidate,row["password_hash"]): return None\n  if not row["mfa_secret"]:\n   if os.getenv("SENTINEL_REQUIRE_MFA")=="1": return None\n  else:\n   key=os.getenv("SENTINEL_MFA_ENCRYPTION_KEY","")\n   if len(key)!=64 or not otp: return None\n   from cryptography.hazmat.primitives.ciphers.aead import AESGCM\n   encrypted=row["mfa_secret"];secret=AESGCM(bytes.fromhex(key)).decrypt(encrypted[:12],encrypted[12:],username.encode()).decode()\n   if not verify_totp(secret,str(otp)): return None
+  if not hmac.compare_digest(candidate,row["password_hash"]): return None
+  if not row["mfa_secret"]:
+   if os.getenv("SENTINEL_REQUIRE_MFA")=="1": return None
+  else:
+   key=os.getenv("SENTINEL_MFA_ENCRYPTION_KEY","")
+   if len(key)!=64 or not otp: return None
+   from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+   encrypted=row["mfa_secret"];secret=AESGCM(bytes.fromhex(key)).decrypt(encrypted[:12],encrypted[12:],username.encode()).decode()
+   if not verify_totp(secret,str(otp)): return None
   token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32);now=int(time.time())
   with self.connect() as db:
    db.execute("DELETE FROM sessions WHERE expires_at<?",(now,))
