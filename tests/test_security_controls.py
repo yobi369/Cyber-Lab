@@ -1,5 +1,7 @@
 import os,sqlite3,tempfile,unittest,datetime,ssl
 from pathlib import Path
+from http.server import HTTPServer,BaseHTTPRequestHandler
+import threading,urllib.request
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes,serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -33,6 +35,18 @@ class SecurityControlTests(unittest.TestCase):
    with patch.dict(os.environ,{"SENTINEL_TLS_CERT":str(cert_path),"SENTINEL_TLS_KEY":str(key_path)}):
     context=tls_context()
    self.assertEqual(context.minimum_version,ssl.TLSVersion.TLSv1_2)
+   class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+     self.send_response(200);self.end_headers();self.wfile.write(b"tls-ok")
+    def log_message(self,*args):pass
+   server=HTTPServer(("127.0.0.1",0),Handler);server.socket=context.wrap_socket(server.socket,server_side=True)
+   thread=threading.Thread(target=server.serve_forever);thread.start()
+   client=ssl.create_default_context();client.check_hostname=False;client.verify_mode=ssl.CERT_NONE
+   try:
+    with urllib.request.urlopen("https://127.0.0.1:"+str(server.server_port)+"/",context=client,timeout=3) as response:
+     self.assertEqual(response.read(),b"tls-ok")
+   finally:
+    server.shutdown();server.server_close();thread.join(timeout=3)
  def test_backup_key_is_loaded_from_secret_environment(self):
   with tempfile.TemporaryDirectory() as d:
    source=Path(d)/"source.db";db=sqlite3.connect(source);db.execute("CREATE TABLE v(x)");db.execute("INSERT INTO v VALUES(7)");db.commit();db.close()
