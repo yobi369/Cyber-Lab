@@ -33,6 +33,13 @@ class SecurityControlTests(unittest.TestCase):
    with patch.dict(os.environ,{"SENTINEL_TLS_CERT":str(cert_path),"SENTINEL_TLS_KEY":str(key_path)}):
     context=tls_context()
    self.assertEqual(context.minimum_version,ssl.TLSVersion.TLSv1_2)
+ def test_backup_key_is_loaded_from_secret_environment(self):
+  with tempfile.TemporaryDirectory() as d:
+   source=Path(d)/"source.db";db=sqlite3.connect(source);db.execute("CREATE TABLE v(x)");db.execute("INSERT INTO v VALUES(7)");db.commit();db.close()
+   backup=Path(d)/"backup.enc";restored=Path(d)/"restored.db"
+   with patch.dict(os.environ,{"SENTINEL_BACKUP_KEY":"ef"*32}):
+    backup_sqlite(str(source),str(backup));restore_sqlite(str(backup),str(restored))
+   db=sqlite3.connect(restored);self.assertEqual(db.execute("SELECT x FROM v").fetchone()[0],7);db.close()
  def test_production_backup_requires_configured_encryption_key(self):
   with patch.dict(os.environ,{"SENTINEL_ENV":"production"},clear=True):
    with self.assertRaises(RuntimeError):backup_sqlite("missing.db","missing-backup.db")
