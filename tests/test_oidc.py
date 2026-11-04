@@ -17,9 +17,9 @@ class OIDCTests(unittest.TestCase):
    "token_endpoint":self.issuer+"/token","jwks_uri":self.issuer+"/jwks"}
   self.client=OIDCClient(self.issuer,"client-id","client-secret","https://app.example.test/auth/oidc/callback",tenant_id="tenant-a")
   self.private=rsa.generate_private_key(public_exponent=65537,key_size=2048)
- def token(self,nonce,tenant="tenant-a"):
+ def token(self,nonce,tenant="tenant-a",amr=None):
   claims={"iss":self.issuer,"sub":"immutable-subject-42","aud":"client-id","iat":1700000000,
-   "exp":4102444800,"nonce":nonce,"tid":tenant,"amr":["mfa"]}
+   "exp":4102444800,"nonce":nonce,"tid":tenant,"amr":amr or ["mfa"]}
   return jwt.encode(claims,self.private,algorithm="RS256",headers={"kid":"unit-test-key"})
  def test_authorization_uses_state_nonce_and_s256_pkce(self):
   with patch("oidc.requests.get",return_value=FakeResponse(self.discovery)):
@@ -41,6 +41,18 @@ class OIDCTests(unittest.TestCase):
   with patch("oidc.requests.get",return_value=FakeResponse(self.discovery)),patch("oidc.requests.post",return_value=FakeResponse({"id_token":self.token("n","tenant-b")})),patch("oidc.PyJWKClient") as jwks:
    jwks.return_value.get_signing_key_from_jwt.return_value.key=self.private.public_key()
    with self.assertRaises(OIDCError):self.client.complete("authorization-code","verifier","n")
+ def test_configured_mfa_assurance_is_required(self):
+  from unittest.mock import patch
+  token=self.token("n",amr=["pwd"])
+  with patch.dict("os.environ",{"SENTINEL_OIDC_REQUIRE_MFA":"1"}),patch("oidc.requests.get",return_value=FakeResponse(self.discovery)),patch("oidc.requests.post",return_value=FakeResponse({"id_token":token})),patch("oidc.PyJWKClient") as jwks:
+   jwks.return_value.get_signing_key_from_jwt.return_value.key=self.private.public_key()
+   with self.assertRaises(OIDCError):self.client.complete("code","verifier","n")
+ def test_invalid_signature_is_rejected(self):
+  token=self.token("n")
+  other=rsa.generate_private_key(public_exponent=65537,key_size=2048)
+  with patch("oidc.requests.get",return_value=FakeResponse(self.discovery)),patch("oidc.requests.post",return_value=FakeResponse({"id_token":token})),patch("oidc.PyJWKClient") as jwks:
+   jwks.return_value.get_signing_key_from_jwt.return_value.key=other.public_key()
+   with self.assertRaises(OIDCError):self.client.complete("code","verifier","n")
  def test_discovery_issuer_mismatch_fails_closed(self):
   bad={**self.discovery,"issuer":"https://attacker.example"}
   with patch("oidc.requests.get",return_value=FakeResponse(bad)):
