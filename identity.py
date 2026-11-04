@@ -33,7 +33,6 @@ class IdentityStore:
    if "mfa_last_counter" not in columns: db.execute("ALTER TABLE users ADD COLUMN mfa_last_counter INTEGER")
  def connect(self):
   db=database_connect(self.path,timeout=10)
-  db.row_factory=sqlite3.Row
   db.execute("PRAGMA foreign_keys=ON")
   db.execute("PRAGMA journal_mode=WAL")
   return db
