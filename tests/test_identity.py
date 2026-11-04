@@ -20,6 +20,11 @@ class IdentityTests(unittest.TestCase):
   self.store.create_user("bob","a-long-enough-password","learner")
   self.assertIsNone(self.store.authenticate("bob","wrong-password"))
   self.assertIsNone(self.store.authenticate("unknown","wrong-password"))
+ def test_persistent_login_throttle(self):
+  for _ in range(8):self.store.record_login_failure("127.0.0.1")
+  self.assertTrue(self.store.login_locked("127.0.0.1"))
+  self.store.clear_login_failures("127.0.0.1")
+  self.assertFalse(self.store.login_locked("127.0.0.1"))
  def test_roles_are_provisioned_not_user_selected(self):
   self.store.create_user("reviewer","long-reviewer-password","reviewer")
   self.assertEqual(self.store.list_users()[0]["role"],"reviewer")
