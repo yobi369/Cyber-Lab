@@ -21,7 +21,7 @@ class IdentityStore:
     active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS sessions(
     token_hash TEXT PRIMARY KEY, username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
-    csrf_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
+    csrf_hash TEXT NOT NULL, csrf_token TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
    CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
    """)
  def connect(self):
@@ -51,7 +51,7 @@ class IdentityStore:
   token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32);now=int(time.time())
   with self.connect() as db:
    db.execute("DELETE FROM sessions WHERE expires_at<?",(now,))
-   db.execute("INSERT INTO sessions VALUES(?,?,?,?,?)",(hashlib.sha256(token.encode()).hexdigest(),username,hashlib.sha256(csrf.encode()).hexdigest(),now+SESSION_TTL,now))
+   db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?)",(hashlib.sha256(token.encode()).hexdigest(),username,hashlib.sha256(csrf.encode()).hexdigest(),csrf,now+SESSION_TTL,now))
   return {"token":token,"csrf":csrf,"username":username,"role":row["role"],"expires_at":now+SESSION_TTL}
  def session(self,token):
   if not token:return None
@@ -59,7 +59,7 @@ class IdentityStore:
   with self.connect() as db:
    row=db.execute("SELECT s.*,u.role,u.active FROM sessions s JOIN users u USING(username) WHERE token_hash=?",(key,)).fetchone()
   if not row or not row["active"] or row["expires_at"]<int(time.time()): return None
-  return {"username":row["username"],"role":row["role"],"csrf_hash":row["csrf_hash"]}
+  return {"username":row["username"],"role":row["role"],"csrf_hash":row["csrf_hash"],"csrf":row["csrf_token"]}
  def verify_csrf(self,session,value):
   return bool(session and value and hmac.compare_digest(session["csrf_hash"],hashlib.sha256(value.encode()).hexdigest()))
  def logout(self,token):
