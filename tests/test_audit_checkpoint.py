@@ -24,7 +24,7 @@ class CheckpointTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as d:
    path=Path(d)/"checkpoint.json";path.write_bytes(b'{"signed":true}')
    client=MagicMock();client.get_bucket_versioning.return_value={"Status":"Enabled"}
-   client.get_object_lock_configuration.return_value={"ObjectLockConfiguration":{"ObjectLockRule":{"DefaultRetention":{"Days":365}}}}
+   client.get_object_lock_configuration.return_value={"ObjectLockConfiguration":{"ObjectLockEnabled":"Enabled","ObjectLockRule":{"DefaultRetention":{"Mode":"COMPLIANCE","Days":365}}}}
    key=archive_checkpoint_s3(path,"audit-bucket",30,client)
    self.assertTrue(key.startswith("sentinel-audit/sha256/"))
    self.assertEqual(client.put_object.call_args.kwargs["ObjectLockMode"],"COMPLIANCE")
