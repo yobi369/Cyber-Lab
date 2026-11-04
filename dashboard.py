@@ -124,6 +124,7 @@ class Handler(BaseHTTPRequestHandler):
   try:data=self.body()
   except (ValueError,json.JSONDecodeError) as e:return self.send_json(400,{"error":str(e)})
   if path=="/api/login":
+   if os.getenv("SENTINEL_REQUIRE_OIDC")=="1":return self.send_json(403,{"error":"local password login is disabled by enterprise SSO policy"})
    remote=self.client_address[0]
    if IDENTITY.login_locked(remote):return self.send_json(429,{"error":"too many login attempts; wait five minutes"})
    result=IDENTITY.authenticate(str(data.get("username","")),str(data.get("password","")),str(data.get("otp","")))
@@ -153,6 +154,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
  server=ThreadingHTTPServer((os.getenv("SENTINEL_BIND","127.0.0.1"),int(os.getenv("SENTINEL_PORT","8765"))),Handler)
  context=tls_context()
+ if os.getenv("SENTINEL_REQUIRE_OIDC")=="1":oidc_client_from_env().discovery()
  archive_worker=None
  bucket=os.getenv("SENTINEL_AUDIT_S3_BUCKET")
  if os.getenv("SENTINEL_REQUIRE_EXTERNAL_AUDIT")=="1" and not bucket: raise RuntimeError("production policy requires SENTINEL_AUDIT_S3_BUCKET")
