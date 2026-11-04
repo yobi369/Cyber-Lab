@@ -76,7 +76,7 @@ In development, the stores use SQLite. Production requires `SENTINEL_ENV=product
 
 ## Backup and restore helpers
 
-Use `backup_sqlite()` and `restore_sqlite()` from `security_controls.py` for a consistent online SQLite/SQLCipher snapshot and integrity-checked restore. Optional AES-256-GCM wrapping requires a separate 32-byte key. SQLCipher migration, active store access, encrypted backup/restore and database key rotation are covered by CI tests. A witnessed recovery drill against the deployed database is still required.
+Use `backup_sqlite()` and `restore_sqlite()` from `security_controls.py` for a consistent online SQLite/SQLCipher snapshot and integrity-checked restore. Production requires `SENTINEL_BACKUP_KEY` (64 hex characters) and automatically wraps backups with AES-256-GCM. SQLCipher migration, active store access, encrypted backup/restore and database key rotation are covered by CI tests. A witnessed recovery drill against the deployed database is still required.
 
 ## Signed audit checkpoints
 Set a high-entropy key supplied by a secret manager (do not commit it):
