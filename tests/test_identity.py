@@ -41,6 +41,17 @@ class IdentityTests(unittest.TestCase):
   self.store.create_user("nomfa","long-enough-password","learner")
   with patch.dict(os.environ,{"SENTINEL_REQUIRE_MFA":"1"}):
    self.assertIsNone(self.store.authenticate("nomfa","long-enough-password"))
+ def test_oidc_state_is_single_use_and_subject_must_be_prelinked(self):
+  self.store.create_user("sso-user","long-enough-password","instructor")
+  self.store.create_oidc_transaction("opaque-state","nonce-value","pkce-verifier")
+  transaction=self.store.consume_oidc_transaction("opaque-state")
+  self.assertEqual(transaction,{"nonce":"nonce-value","code_verifier":"pkce-verifier"})
+  self.assertIsNone(self.store.consume_oidc_transaction("opaque-state"))
+  self.assertIsNone(self.store.create_oidc_session("https://idp.example","immutable-subject"))
+  self.store.link_oidc_identity("sso-user","https://idp.example","immutable-subject")
+  session=self.store.create_oidc_session("https://idp.example","immutable-subject")
+  self.assertEqual(session["username"],"sso-user")
+  self.assertEqual(session["role"],"instructor")
  def test_roles_are_provisioned_not_user_selected(self):
   self.store.create_user("reviewer","long-reviewer-password","reviewer")
   self.assertEqual(self.store.list_users()[0]["role"],"reviewer")
