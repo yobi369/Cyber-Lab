@@ -21,7 +21,7 @@ class AuditArchiverTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as d:
    path=Path(d)/"audit.jsonl";path.write_text("{invalid}\n")
    client=MagicMock();client.get_bucket_versioning.return_value={"Status":"Enabled"}
-   client.get_object_lock_configuration.return_value={"ObjectLockConfiguration":{"ObjectLockRule":{"DefaultRetention":{"Days":365}}}}
+   client.get_object_lock_configuration.return_value={"ObjectLockConfiguration":{"ObjectLockEnabled":"Enabled","ObjectLockRule":{"DefaultRetention":{"Mode":"COMPLIANCE","Days":365}}}}
    worker=AuditArchiveWorker(path,"bucket","audit-secret-material-at-least-32-characters",client=client)
    with self.assertRaises(ValueError):worker.archive_once()
    client.put_object.assert_not_called()
