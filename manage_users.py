@@ -7,11 +7,14 @@ def main():
  sub=p.add_subparsers(dest="command",required=True)
  c=sub.add_parser("create-user");c.add_argument("username");c.add_argument("--role",choices=["learner","instructor","reviewer","auditor"],required=True)
  m=sub.add_parser("enroll-mfa");m.add_argument("username")
+ o=sub.add_parser("link-oidc");o.add_argument("username");o.add_argument("--issuer",required=True);o.add_argument("--subject",required=True)
  sub.add_parser("list-users");a=p.parse_args();store=IdentityStore(a.db)
  if a.command=="create-user":
   password=getpass.getpass("New password (12+ characters): ");confirm=getpass.getpass("Confirm password: ")
   if password!=confirm:raise SystemExit("Passwords do not match.")
   print(store.create_user(a.username,password,a.role))
+ elif a.command=="link-oidc":
+  store.link_oidc_identity(a.username,a.issuer,a.subject);print("Linked immutable OIDC subject to",a.username)
  elif a.command=="enroll-mfa":
   secret=new_totp_secret();print("Add this TOTP URI to your authenticator:",totp_uri(secret,a.username))
   code=getpass.getpass("Enter the current six-digit authenticator code to confirm: ")
