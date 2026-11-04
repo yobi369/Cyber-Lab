@@ -75,6 +75,7 @@ def migrate_sqlite_to_sqlcipher(source,destination,key):
     """Copy a quiesced plaintext SQLite DB into a new SQLCipher DB."""
     if Path(source).resolve()==Path(destination).resolve():
         raise ValueError("source and destination must differ")
+    if Path(destination).exists(): raise FileExistsError(destination)
     src=sqlite3.connect(source)
     dst=encrypted_sqlite_connect(destination,key=key)
     try:
@@ -94,6 +95,7 @@ def rekey_sqlcipher_database(path,old_key,new_key):
     if temp.exists(): raise FileExistsError(str(temp))
     src=encrypted_sqlite_connect(str(source),key=old_key)
     dst=encrypted_sqlite_connect(str(temp),key=new_key)
+    os.chmod(temp,0o600)
     try:
         src.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         src.backup(dst)
@@ -126,6 +128,7 @@ def backup_sqlite(source,destination,encryption_key=None):
         try: src.backup(dst)
         finally: dst.close()
     finally: src.close()
+    os.chmod(tmp,0o600)
     raw=tmp.read_bytes()
     tmp.unlink()
     if encryption_key is not None:
@@ -155,7 +158,8 @@ def restore_sqlite(backup,destination,encryption_key=None):
     target=Path(destination)
     target.parent.mkdir(parents=True,exist_ok=True)
     tmp=target.with_suffix(target.suffix+".restore-tmp")
-    tmp.write_bytes(raw)
+    fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    with os.fdopen(fd,"wb") as stream: stream.write(raw);stream.flush();os.fsync(stream.fileno())
     db=database_connect(str(tmp))
     try:
         if db.execute("PRAGMA integrity_check").fetchone()[0]!="ok": raise ValueError("backup integrity check failed")
