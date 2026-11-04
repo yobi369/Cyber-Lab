@@ -1,6 +1,7 @@
 """SQLite persistence for Sentinel Lab training records and versioned scenarios."""
 from __future__ import annotations
 import json,sqlite3,time
+from security_controls import database_connect
 
 class TrainingStore:
  def __init__(self,path="sentinel-lab.sqlite3"):
@@ -14,7 +15,7 @@ class TrainingStore:
    CREATE INDEX IF NOT EXISTS assessments_submission ON assessments(submission_id);
    """)
  def connect(self):
-  db=sqlite3.connect(self.path,timeout=10);db.row_factory=sqlite3.Row
+  db=database_connect(self.path,timeout=10);db.row_factory=sqlite3.Row
   db.execute("PRAGMA foreign_keys=ON");db.execute("PRAGMA journal_mode=WAL");return db
  def save_scenario(self,item,author,status="draft"):
   with self.connect() as db:
