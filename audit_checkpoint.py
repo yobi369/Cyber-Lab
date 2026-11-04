@@ -15,7 +15,7 @@ def create_checkpoint(audit_path,output,secret):
  signature=hmac.new(secret.encode(),canonical(payload),hashlib.sha256).hexdigest()
  checkpoint={**payload,"signature":signature}
  path=Path(output);path.parent.mkdir(parents=True,exist_ok=True)
- with path.open("x",encoding="utf-8") as stream:json.dump(checkpoint,stream,sort_keys=True);stream.write("\\n");stream.flush();os.fsync(stream.fileno())
+ with path.open("x",encoding="utf-8") as stream:json.dump(checkpoint,stream,sort_keys=True);stream.write(chr(10));stream.flush();os.fsync(stream.fileno())
  return checkpoint
 
 def verify_checkpoint(path,secret):
