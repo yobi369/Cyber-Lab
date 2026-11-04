@@ -5,7 +5,7 @@ chooses a role. Passwords use PBKDF2-HMAC-SHA256 with per-user salts.
 """
 from __future__ import annotations
 import hashlib, hmac, secrets, sqlite3, time, os
-from security_controls import verify_totp, database_connect
+from security_controls import matching_totp_counter, database_connect
 from pathlib import Path
 
 ITERATIONS=310_000
@@ -19,7 +19,7 @@ class IdentityStore:
    CREATE TABLE IF NOT EXISTS users(
     username TEXT PRIMARY KEY, password_hash BLOB NOT NULL, salt BLOB NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('learner','instructor','reviewer','auditor')),
-    active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, mfa_secret BLOB);
+    active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, mfa_secret BLOB, mfa_last_counter INTEGER);
    CREATE TABLE IF NOT EXISTS sessions(
     token_hash TEXT PRIMARY KEY, username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
     csrf_hash TEXT NOT NULL, csrf_token TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
@@ -28,6 +28,7 @@ class IdentityStore:
    """)
    columns={row[1] for row in db.execute("PRAGMA table_info(users)")}
    if "mfa_secret" not in columns: db.execute("ALTER TABLE users ADD COLUMN mfa_secret BLOB")
+   if "mfa_last_counter" not in columns: db.execute("ALTER TABLE users ADD COLUMN mfa_last_counter INTEGER")
  def connect(self):
   db=database_connect(self.path,timeout=10)
   db.row_factory=sqlite3.Row
@@ -51,7 +52,7 @@ class IdentityStore:
   from cryptography.hazmat.primitives.ciphers.aead import AESGCM
   nonce=secrets.token_bytes(12);encrypted=nonce+AESGCM(bytes.fromhex(key)).encrypt(nonce,secret.encode(),username.encode())
   with self.connect() as db:
-   cur=db.execute("UPDATE users SET mfa_secret=? WHERE username=? AND active=1",(encrypted,username))
+   cur=db.execute("UPDATE users SET mfa_secret=?,mfa_last_counter=NULL WHERE username=? AND active=1",(encrypted,username))
    if cur.rowcount!=1: raise ValueError("active user not found")
  def authenticate(self,username,password,otp=None):
   with self.connect() as db: row=db.execute("SELECT * FROM users WHERE username=? AND active=1",(username,)).fetchone()
@@ -60,6 +61,7 @@ class IdentityStore:
    return None
   candidate=self._derive(password,row["salt"])
   if not hmac.compare_digest(candidate,row["password_hash"]): return None
+  matched_counter=None
   if not row["mfa_secret"]:
    if os.getenv("SENTINEL_REQUIRE_MFA")=="1": return None
   else:
@@ -67,9 +69,13 @@ class IdentityStore:
    if len(key)!=64 or not otp: return None
    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
    encrypted=row["mfa_secret"];secret=AESGCM(bytes.fromhex(key)).decrypt(encrypted[:12],encrypted[12:],username.encode()).decode()
-   if not verify_totp(secret,str(otp)): return None
+   matched_counter=matching_totp_counter(secret,str(otp))
+   if matched_counter is None: return None
   token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32);now=int(time.time())
   with self.connect() as db:
+   if matched_counter is not None:
+    cur=db.execute("UPDATE users SET mfa_last_counter=? WHERE username=? AND (mfa_last_counter IS NULL OR mfa_last_counter<?)",(matched_counter,username,matched_counter))
+    if cur.rowcount!=1: return None
    db.execute("DELETE FROM sessions WHERE expires_at<?",(now,))
    db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?)",(hashlib.sha256(token.encode()).hexdigest(),username,hashlib.sha256(csrf.encode()).hexdigest(),csrf,now+SESSION_TTL,now))
   return {"token":token,"csrf":csrf,"username":username,"role":row["role"],"expires_at":now+SESSION_TTL}
