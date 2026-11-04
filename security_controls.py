@@ -85,6 +85,29 @@ def migrate_sqlite_to_sqlcipher(source,destination,key):
         dst.close()
         src.close()
 
+
+def rekey_sqlcipher_database(path,old_key,new_key):
+    """Atomically re-encrypt a SQLCipher database with a new independent key."""
+    source=Path(path)
+    if old_key==new_key: raise ValueError("new database key must differ from old key")
+    temp=source.with_name(source.name+".rekey")
+    if temp.exists(): raise FileExistsError(str(temp))
+    src=encrypted_sqlite_connect(str(source),key=old_key)
+    dst=encrypted_sqlite_connect(str(temp),key=new_key)
+    try:
+        src.backup(dst)
+        if dst.execute("PRAGMA integrity_check").fetchone()[0]!="ok":
+            raise RuntimeError("rekey verification failed")
+    finally:
+        dst.close()
+        src.close()
+    check=encrypted_sqlite_connect(str(temp),key=new_key)
+    try:
+        if check.execute("PRAGMA integrity_check").fetchone()[0]!="ok":
+            raise RuntimeError("new database key verification failed")
+    finally: check.close()
+    os.replace(temp,source)
+
 def backup_sqlite(source,destination,encryption_key=None):
     """Consistent online backup; honors SENTINEL_DB_ENCRYPTION for SQLCipher DBs."""
     src=database_connect(source)
