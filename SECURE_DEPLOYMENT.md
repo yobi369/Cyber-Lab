@@ -79,7 +79,7 @@ python manage_users.py --db sentinel-lab.sqlite3 rotate-mfa-key
 The operation decrypts and re-encrypts every enrolled seed in one database transaction; retain the old key until all accounts have successfully authenticated with the new version.
 
 ## Backup and recovery
-`backup_sqlite()` uses the SQLite/SQLCipher online backup API and honors SENTINEL_DB_ENCRYPTION. Optional AES-256-GCM backup wrapping requires a separate 32-byte backup key. `restore_sqlite()` authenticates encrypted backup bytes, checks database integrity using the configured SQLite/SQLCipher backend, applies restrictive file permissions and atomically installs the restored database.
+`backup_sqlite()` uses the SQLite/SQLCipher online backup API and honors SENTINEL_DB_ENCRYPTION. In production, `backup_sqlite()` and `restore_sqlite()` require `SENTINEL_BACKUP_KEY` (64 hex characters) and automatically apply AES-256-GCM wrapping in addition to SQLCipher database encryption. Keep each backup-key version until every backup encrypted with it expires. `restore_sqlite()` authenticates encrypted backup bytes, checks database integrity using the configured SQLite/SQLCipher backend, applies restrictive file permissions and atomically installs the restored database.
 
 CI verifies plaintext and encrypted backup/restore, wrong-key rejection, SQLCipher migration, live IdentityStore/TrainingStore operation, and SQLCipher key rotation. This is not a witnessed recovery drill for a deployed system.
 
