@@ -36,6 +36,7 @@ class IdentityTests(unittest.TestCase):
    self.assertIsNone(self.store.authenticate("mfauser","long-enough-password","000000"))
    login=self.store.authenticate("mfauser","long-enough-password",totp_code(secret))
    self.assertIsNotNone(login)
+   self.assertIsNone(self.store.authenticate("mfauser","long-enough-password",totp_code(secret)))
  def test_require_mfa_blocks_accounts_without_enrollment(self):
   self.store.create_user("nomfa","long-enough-password","learner")
   with patch.dict(os.environ,{"SENTINEL_REQUIRE_MFA":"1"}):
