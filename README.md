@@ -111,7 +111,7 @@ GitHub Actions runs Python 3.11/3.12 unit/security tests, Chromium browser tests
 ## Security status and limitations
 This remains a local prototype pending deployment-specific acceptance. TOTP MFA, OIDC protocol flow, SQLCipher store integration, TLS startup, Secure cookies, nonce CSP, SQLCipher migration/rekey, encrypted recovery helpers and S3 Object Lock checkpoint archiving are implemented and have automated tests. Real IdP registration/credentials, TLS certificates and secret-manager configuration, a real Object Lock bucket, tenant isolation, a witnessed recovery drill, and independent penetration testing plus retest remain release gates. Password recovery codes and a scheduled remote checkpoint service are also not implemented.
 
-Read [THREAT_MODEL.md](THREAT_MODEL.md), [SECURITY_TEST_PLAN.md](SECURITY_TEST_PLAN.md), and [SECURE_DEPLOYMENT.md](SECURE_DEPLOYMENT.md) before use.
+Use [deployment.env.example](deployment.env.example) as the variable-name checklist; populate secrets only in a secret manager or deployment environment, never in Git. Read [THREAT_MODEL.md](THREAT_MODEL.md), [SECURITY_TEST_PLAN.md](SECURITY_TEST_PLAN.md), and [SECURE_DEPLOYMENT.md](SECURE_DEPLOYMENT.md) before use.
 
 ## License
 No license is currently declared. All rights remain with the repository owner unless a license is added.
