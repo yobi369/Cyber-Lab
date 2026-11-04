@@ -30,6 +30,12 @@ class PlatformTests(unittest.TestCase):
  def test_assessments_are_scoped_to_learner(self):
   item=self.p.submit(self.learner,"identity-01",self.evidence());self.p.grade(self.instructor,item["id"],{k:2 for k in RUBRIC},"Feedback")
   self.assertEqual(self.p.learner_assessments(Actor("other",Role.LEARNER)),[])
+ def test_instructor_can_create_bounded_scenario(self):
+  data={"title":"Phishing report triage","category":"Email security","level":"Foundation","brief":"Several users reported a suspicious message.","safe_boundary":"Synthetic email only.","objectives":["Assess sender indicators","Recommend safe reporting"],"artifacts":["Synthetic sender header","User report summary"]}
+  created=self.p.create_scenario(self.instructor,data)
+  self.assertTrue(created["id"].startswith("custom-"))
+  self.assertEqual(len(self.p.scenarios(self.learner)),4)
+  with self.assertRaises(AuthorizationError):self.p.create_scenario(self.learner,data)
  def test_invalid_evidence_and_scores_rejected(self):
   with self.assertRaises(ValueError):self.p.submit(self.learner,"identity-01",{"observations":"only"})
   item=self.p.submit(self.learner,"identity-01",self.evidence())
