@@ -33,6 +33,9 @@ class SecurityControlTests(unittest.TestCase):
    with patch.dict(os.environ,{"SENTINEL_TLS_CERT":str(cert_path),"SENTINEL_TLS_KEY":str(key_path)}):
     context=tls_context()
    self.assertEqual(context.minimum_version,ssl.TLSVersion.TLSv1_2)
+ def test_production_backup_requires_configured_encryption_key(self):
+  with patch.dict(os.environ,{"SENTINEL_ENV":"production"},clear=True):
+   with self.assertRaises(RuntimeError):backup_sqlite("missing.db","missing-backup.db")
  def test_production_database_refuses_plaintext_mode(self):
   with patch.dict(os.environ,{"SENTINEL_ENV":"production"},clear=True):
    with self.assertRaises(RuntimeError):database_connect(":memory:")
