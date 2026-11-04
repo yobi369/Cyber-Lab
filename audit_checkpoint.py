@@ -55,11 +55,15 @@ def archive_checkpoint_s3(path,bucket,retention_days=365,client=None):
 def main():
  p=argparse.ArgumentParser();p.add_argument("audit_file");p.add_argument("output");p.add_argument("--verify",action="store_true")
  p.add_argument("--key-id",default=os.getenv("SENTINEL_AUDIT_KEY_ID","default"));p.add_argument("--s3-bucket")
- p.add_argument("--retention-days",type=int,default=365);a=p.parse_args()
+ p.add_argument("--retention-days",type=int,default=365);p.add_argument("--rotate-from-key-id");a=p.parse_args()
  secret=os.getenv("SENTINEL_AUDIT_HMAC_KEY","")
  if not secret:raise SystemExit("Set SENTINEL_AUDIT_HMAC_KEY from a secret manager.")
  if a.verify:print("valid" if verify_checkpoint(a.output,{a.key_id:secret}) else "INVALID");return
- create_checkpoint(a.audit_file,a.output,secret,a.key_id)
+ if a.rotate_from_key_id:
+  old=os.getenv("SENTINEL_AUDIT_OLD_HMAC_KEY","")
+  if not old:raise SystemExit("Set SENTINEL_AUDIT_OLD_HMAC_KEY for dual-signature rotation.")
+  create_rotation_checkpoint(a.audit_file,a.output,a.rotate_from_key_id,old,a.key_id,secret)
+ else:create_checkpoint(a.audit_file,a.output,secret,a.key_id)
  if a.s3_bucket:print("Archived:",archive_checkpoint_s3(a.output,a.s3_bucket,a.retention_days))
  else:print("Checkpoint created locally; no external immutable destination was requested.")
 if __name__=="__main__":main()
