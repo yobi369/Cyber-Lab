@@ -4,15 +4,15 @@ Sentinel Lab remains a local prototype. The controls in security_controls.py are
 
 ## MFA and enterprise OIDC
 
-TOTP uses RFC 6238, HMAC-SHA1, six digits, 30-second periods and a one-step clock-skew window. The dashboard login flow has not yet been wired to MFA enrollment/challenge and recovery codes. Do not treat the helper as enforcement.
+TOTP uses RFC 6238, HMAC-SHA1, six digits, 30-second periods and a one-step clock-skew window. The local password login flow now accepts and enforces TOTP for enrolled users. Terminal enrollment verifies a first code before storing the seed encrypted with AES-GCM under SENTINEL_MFA_ENCRYPTION_KEY. Set SENTINEL_REQUIRE_MFA=1 to block unenrolled users. Recovery codes, reset/re-enrollment governance and enterprise step-up assurance remain to be implemented.
 
 OIDC authorization-code + PKCE is not yet integrated. Select an enterprise IdP (Entra ID, Okta, or Keycloak), register exact redirect URIs, validate signature against trusted JWKS, issuer, audience, expiry, nonce, state and PKCE verifier, reject replay, and map immutable issuer+subject to a local identity. Restrict tenant IDs and require MFA/conditional access at the IdP. Never authorize by email domain alone. Add negative tests for every validation failure before enabling SSO.
 
 ## TLS, cookies and CSP
 
-Production configuration must fail closed when TLS certificates or Secure cookies are absent. Required environment values: SENTINEL_ENV=production, SENTINEL_TLS_CERT, SENTINEL_TLS_KEY, SENTINEL_COOKIE_SECURE=1. The current dashboard entry point still needs to call tls_context() and secure_cookie_attributes(); merely setting variables does not activate TLS.
+Production configuration must fail closed when TLS certificates or Secure cookies are absent. Required environment values: SENTINEL_ENV=production, SENTINEL_TLS_CERT, SENTINEL_TLS_KEY, SENTINEL_COOKIE_SECURE=1. The dashboard now calls tls_context() at startup and uses secure_cookie_attributes() for session cookies. Production startup fails when TLS certificate/key or Secure-cookie configuration is absent. When TLS terminates at a reverse proxy, configure a trusted deployment boundary and exact SENTINEL_PUBLIC_ORIGIN; do not trust arbitrary forwarded headers.
 
-The current HTML uses inline scripts and styles. A per-response nonce must be generated, inserted into every script/style element and sent in the matching CSP header. Remove unsafe-inline and unsafe-eval. This nonce integration remains a blocking dashboard change.
+The current HTML uses inline scripts and styles. A per-response nonce must be generated, inserted into every script/style element and sent in the matching CSP header. Remove unsafe-inline and unsafe-eval. The dashboard now generates a fresh random nonce per HTML response and applies it to the inline script and style elements. Browser CI asserts nonce directives and rejects unsafe-inline/unsafe-eval. Revisit policy when adding new inline elements or external assets.
 
 ## Encrypted database and recovery
 
