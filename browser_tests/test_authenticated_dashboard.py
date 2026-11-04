@@ -1,5 +1,6 @@
 import os,socket,subprocess,sys,tempfile,time,unittest,urllib.request,urllib.error
 from pathlib import Path
+from unittest.mock import patch
 from playwright.sync_api import sync_playwright
 from identity import IdentityStore
 from security_controls import new_totp_secret,totp_code
@@ -11,7 +12,7 @@ class AuthenticatedBrowserTests(unittest.TestCase):
   db=str(Path(cls.tmp.name)/"browser.sqlite3")
   store=IdentityStore(db);store.create_user("browser-teacher","browser-test-password-long","instructor")
   store.create_user("browser-mfa","browser-mfa-password-long","reviewer");cls.mfa_secret=new_totp_secret()
-  with __import__("unittest").mock.patch.dict(os.environ,{"SENTINEL_MFA_ENCRYPTION_KEY":"ab"*32}): store.set_totp_secret("browser-mfa",cls.mfa_secret)
+  with patch.dict(os.environ,{"SENTINEL_MFA_ENCRYPTION_KEY":"ab"*32}): store.set_totp_secret("browser-mfa",cls.mfa_secret)
   env=os.environ.copy();env["SENTINEL_MFA_ENCRYPTION_KEY"]="ab"*32
   env["SENTINEL_DB"]=db;env["ADMIN_LAB_AUDIT_FILE"]=str(Path(cls.tmp.name)/"audit.jsonl")
   cls.server=subprocess.Popen([sys.executable,"dashboard.py"],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
