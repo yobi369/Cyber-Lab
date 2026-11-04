@@ -1,5 +1,9 @@
-import os,sqlite3,tempfile,unittest
+import os,sqlite3,tempfile,unittest,datetime,ssl
 from pathlib import Path
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes,serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from unittest.mock import patch
 from security_controls import new_totp_secret,totp_code,verify_totp,secure_cookie_attributes,tls_context,backup_sqlite,restore_sqlite,encrypted_sqlite_connect,migrate_sqlite_to_sqlcipher,database_connect,rekey_sqlcipher_database
 class SecurityControlTests(unittest.TestCase):
@@ -14,6 +18,21 @@ class SecurityControlTests(unittest.TestCase):
    with self.assertRaises(RuntimeError): secure_cookie_attributes()
    with self.assertRaises(RuntimeError): tls_context()
   with patch.dict(os.environ,{'SENTINEL_COOKIE_SECURE':'1'}): self.assertIn('Secure',secure_cookie_attributes())
+ def test_tls_context_loads_real_certificate_and_enforces_tls12_minimum(self):
+  with tempfile.TemporaryDirectory() as d:
+   key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
+   name=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,"localhost")])
+   cert=(x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+    .serial_number(x509.random_serial_number()).not_valid_before(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=1))
+    .not_valid_after(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=1))
+    .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost")]),critical=False)
+    .sign(key,hashes.SHA256()))
+   cert_path=Path(d)/"tls.crt";key_path=Path(d)/"tls.key"
+   cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+   key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.TraditionalOpenSSL,serialization.NoEncryption()))
+   with patch.dict(os.environ,{"SENTINEL_TLS_CERT":str(cert_path),"SENTINEL_TLS_KEY":str(key_path)}):
+    context=tls_context()
+   self.assertEqual(context.minimum_version,ssl.TLSVersion.TLSv1_2)
  def test_sqlcipher_never_falls_back_to_plaintext(self):
   with patch.dict(os.environ,{},clear=True):
    with self.assertRaises(RuntimeError): encrypted_sqlite_connect(':memory:')
