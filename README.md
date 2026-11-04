@@ -10,7 +10,9 @@ Sentinel Lab is a local-first training platform for defensive incident response,
 - PBKDF2-HMAC-SHA256 password hashes, opaque HttpOnly/SameSite session cookies, CSRF tokens, same-origin POST checks, and persistent login throttling.
 - Optional per-account TOTP MFA with encrypted authenticator seeds; terminal enrollment and login challenge are implemented.
 - Nonce-based Content Security Policy, TLS 1.2+ server context, and production fail-closed Secure-cookie/TLS configuration.
-- SQLCipher-only encrypted connection helper, consistent SQLite backup, AES-256-GCM backup encryption/restore, and an S3 Object Lock COMPLIANCE archive adapter.
+- SQLCipher-backed identity and training stores when production encryption is enabled; plaintext-to-encrypted migration, encrypted backup/restore and tested database key rotation.
+- Enterprise OIDC Authorization Code + PKCE, JWKS signature validation, tenant/nonce/state checks, and administrator-controlled immutable subject mapping.
+- Signed audit checkpoint key IDs, dual-signature rotation records, and an S3 Object Lock COMPLIANCE archive command.
 - Out-of-band account provisioning; no public registration or browser role selector.
 - Scenario lifecycle: instructor drafts, edits create immutable new versions, and publishing is explicit.
 - Synthetic incident datasets and facilitator injects in [FACILITATOR_GUIDE.md](FACILITATOR_GUIDE.md).
@@ -56,21 +58,30 @@ python manage_users.py --db sentinel-lab.sqlite3 enroll-mfa brian
 
 The command displays an authenticator URI and requires a valid first code before storing the encrypted seed. Set `SENTINEL_REQUIRE_MFA=1` to block accounts that have not enrolled. Keep the MFA encryption key separate from database and backup keys.
 
-## Data persistence
-SQLite stores identities, sessions, scenario versions and lifecycle state, learner submissions, and reviewer assessments. Use a consistent backup procedure for both the SQLite database (including WAL state; use SQLite's backup API or stop the app cleanly) and the JSONL audit log. Never copy only the main database file while WAL writes are active.
+## Enterprise SSO
+Configure `SENTINEL_OIDC_ISSUER`, `SENTINEL_OIDC_CLIENT_ID`, `SENTINEL_OIDC_CLIENT_SECRET`, and `SENTINEL_OIDC_REDIRECT_URI` from a secret manager. Optionally set `SENTINEL_OIDC_TENANT_ID` and `SENTINEL_OIDC_REQUIRE_MFA=1`. Link the verified immutable subject to a pre-provisioned local account:
+
+```bash
+python manage_users.py --db sentinel-lab.sqlite3 link-oidc brian --issuer 'https://idp.example.com' --subject '<immutable-subject>'
+```
+
+The application does not trust email domains or IdP role claims. See [SECURE_DEPLOYMENT.md](SECURE_DEPLOYMENT.md) for IdP setup and validation details.
+
+## Data persistence and encryption
+In development, the stores use SQLite. Production requires `SENTINEL_ENV=production`, `SENTINEL_DB_ENCRYPTION=1`, and `SENTINEL_DB_KEY` (64 hex characters from a secret manager). Both identity and training stores use SQLCipher when enabled; production refuses plaintext fallback. For an existing database, stop the app, back it up, then run `python migrate_database.py encrypt plaintext.db encrypted.db` with `SENTINEL_DB_KEY` set. Set `SENTINEL_DB` to the verified encrypted file before restarting.
 
 ## Backup and restore helpers
 
-Use `backup_sqlite()` and `restore_sqlite()` from `security_controls.py` for a consistent online SQLite snapshot and integrity-checked restore. Optional AES-256-GCM encryption requires `cryptography` and a 32-byte key. These helpers are tested with synthetic databases; a production recovery drill is still required. SQLCipher connection support is provided but the existing identity and training stores have not yet migrated to it.
+Use `backup_sqlite()` and `restore_sqlite()` from `security_controls.py` for a consistent online SQLite/SQLCipher snapshot and integrity-checked restore. Optional AES-256-GCM wrapping requires a separate 32-byte key. SQLCipher migration, active store access, encrypted backup/restore and database key rotation are covered by CI tests. A witnessed recovery drill against the deployed database is still required.
 
 ## Signed audit checkpoints
 Set a high-entropy key supplied by a secret manager (do not commit it):
 ```bash
 export SENTINEL_AUDIT_HMAC_KEY='use-a-secret-of-at-least-32-characters'
-python audit_checkpoint.py training-audit.jsonl /secure-export/checkpoint-2026-11-04.json
-python audit_checkpoint.py training-audit.jsonl /secure-export/checkpoint-2026-11-04.json --verify
+python audit_checkpoint.py training-audit.jsonl /secure-export/checkpoint.json --key-id audit-v1 --s3-bucket '<object-lock-bucket>' --retention-days 365
+python audit_checkpoint.py training-audit.jsonl /secure-export/checkpoint.json --verify --key-id audit-v1
 ```
-The output is a signed statement of event count and audit head. Copy it to a separately administered immutable/WORM store or independent security account. This repository does **not** itself configure that external store; independent retention, key rotation, access review, and restore verification remain operational responsibilities. HMAC checkpoints require secure protection and backup of the signing key.
+The output is a signed statement of event count and audit head. With `--s3-bucket`, the command verifies bucket versioning/Object Lock and archives the checkpoint in COMPLIANCE mode. The adapter and retention-mode write are tested with a mocked client; a real bucket, credentials, auditor retrieval and external account controls still need live provisioning. `create_rotation_checkpoint()` creates dual-signed audit key transition records.
 
 ## Scenario and assessment workflow
 - Instructors create draft scenarios and can create revised versions; prior versions remain preserved.
@@ -81,7 +92,8 @@ The output is a signed statement of event count and audit head. Copy it to a sep
 ## Tests
 Unit and security tests:
 ```bash
-python -m compileall -q admin_lab.py audit_chain.py audit_checkpoint.py identity.py storage.py training_platform.py dashboard.py manage_users.py tests
+python -m pip install -r requirements-security.txt
+python -m compileall -q admin_lab.py audit_chain.py audit_checkpoint.py security_controls.py oidc.py identity.py storage.py training_platform.py dashboard.py manage_users.py migrate_database.py tests
 python -m unittest discover -s tests -v
 ```
 Browser tests require Chromium:
@@ -93,7 +105,7 @@ python -m unittest discover -s browser_tests -v
 GitHub Actions runs Python 3.11/3.12 unit tests and a real Chromium authentication/CSRF integration job.
 
 ## Security status and limitations
-This is a hardened local prototype, not a production multi-user deployment. Before public or organizational use, complete enterprise OIDC/SSO, password reset and recovery, SQLCipher migration of both stores, tenant isolation, real-bucket Object Lock integration, witnessed backup/restore, rate-limit monitoring, dependency and SAST scanning, and independent penetration testing plus retest. TOTP MFA, TLS startup support, Secure cookies, and nonce-based CSP are implemented, but production deployment still requires secret/certificate provisioning and verification. The S3 adapter is not yet connected to a scheduled checkpoint exporter.
+This remains a local prototype pending deployment-specific acceptance. TOTP MFA, OIDC protocol flow, SQLCipher store integration, TLS startup, Secure cookies, nonce CSP, SQLCipher migration/rekey, encrypted recovery helpers and S3 Object Lock checkpoint archiving are implemented and have automated tests. Real IdP registration/credentials, TLS certificates and secret-manager configuration, a real Object Lock bucket, tenant isolation, a witnessed recovery drill, and independent penetration testing plus retest remain release gates. Password recovery codes and a scheduled remote checkpoint service are also not implemented.
 
 Read [THREAT_MODEL.md](THREAT_MODEL.md), [SECURITY_TEST_PLAN.md](SECURITY_TEST_PLAN.md), and [SECURE_DEPLOYMENT.md](SECURE_DEPLOYMENT.md) before use.
 
