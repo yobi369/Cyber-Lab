@@ -81,7 +81,7 @@ export SENTINEL_AUDIT_HMAC_KEY='use-a-secret-of-at-least-32-characters'
 python audit_checkpoint.py training-audit.jsonl /secure-export/checkpoint.json --key-id audit-v1 --s3-bucket '<object-lock-bucket>' --retention-days 365
 python audit_checkpoint.py training-audit.jsonl /secure-export/checkpoint.json --verify --key-id audit-v1
 ```
-The output is a signed statement of event count and audit head. With `--s3-bucket`, the command verifies bucket versioning/Object Lock and archives the checkpoint in COMPLIANCE mode. The adapter and retention-mode write are tested with a mocked client; a real bucket, credentials, auditor retrieval and external account controls still need live provisioning. `create_rotation_checkpoint()` creates dual-signed audit key transition records.
+The output is a signed statement of event count and audit head. With `--s3-bucket`, the command verifies bucket versioning/Object Lock and archives the checkpoint in COMPLIANCE mode. The adapter, background changed-head scheduler and retention-mode write are tested with a mocked client; a real bucket, credentials, auditor retrieval and external account controls still need live provisioning. Set `SENTINEL_AUDIT_S3_BUCKET` to enable scheduled archiving; set `SENTINEL_REQUIRE_EXTERNAL_AUDIT=1` to make it a startup requirement. `create_rotation_checkpoint()` creates dual-signed audit key transition records.
 
 ## Scenario and assessment workflow
 - Instructors create draft scenarios and can create revised versions; prior versions remain preserved.
