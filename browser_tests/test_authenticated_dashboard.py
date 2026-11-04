@@ -2,14 +2,17 @@ import os,socket,subprocess,sys,tempfile,time,unittest,urllib.request,urllib.err
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 from identity import IdentityStore
+from security_controls import new_totp_secret,totp_code
 
 class AuthenticatedBrowserTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
   cls.tmp=tempfile.TemporaryDirectory();cls.port=8766
   db=str(Path(cls.tmp.name)/"browser.sqlite3")
-  IdentityStore(db).create_user("browser-teacher","browser-test-password-long","instructor")
-  env=os.environ.copy();env["SENTINEL_DB"]=db;env["ADMIN_LAB_AUDIT_FILE"]=str(Path(cls.tmp.name)/"audit.jsonl")
+  store=IdentityStore(db);store.create_user("browser-teacher","browser-test-password-long","instructor")
+  store.create_user("browser-mfa","browser-mfa-password-long","reviewer");cls.mfa_secret=new_totp_secret()
+  env=os.environ.copy();env["SENTINEL_MFA_ENCRYPTION_KEY"]="ab"*32;store.set_totp_secret("browser-mfa",cls.mfa_secret)
+  env["SENTINEL_DB"]=db;env["ADMIN_LAB_AUDIT_FILE"]=str(Path(cls.tmp.name)/"audit.jsonl")
   cls.server=subprocess.Popen([sys.executable,"dashboard.py"],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
   # Dashboard defaults to 8765; wait for its loopback listener.
   deadline=time.time()+15
@@ -55,6 +58,18 @@ class AuthenticatedBrowserTests(unittest.TestCase):
    self.assertEqual(result,403)
    no_csrf=page.evaluate("""async () => {let r=await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});return r.status}""")
    self.assertEqual(no_csrf,403)
+   browser.close()
+
+ def test_mfa_login_and_oidc_routes_fail_closed_when_unconfigured(self):
+  with sync_playwright() as p:
+   browser=p.chromium.launch();page=browser.new_page();page.goto("http://127.0.0.1:8765")
+   page.locator('input[name="username"]').fill("browser-mfa")
+   page.locator('input[name="password"]').fill("browser-mfa-password-long")
+   page.locator('input[name="otp"]').fill(totp_code(self.mfa_secret))
+   page.locator("#loginForm button").click();page.wait_for_selector("#workspace:not(.hidden)")
+   self.assertIn("reviewer",page.locator("#identity").inner_text())
+   self.assertEqual(page.request.get("http://127.0.0.1:8765/auth/oidc/start").status,503)
+   self.assertEqual(page.request.get("http://127.0.0.1:8765/auth/oidc/callback?state=forged&code=x").status,400)
    browser.close()
 
 if __name__=="__main__":unittest.main()
