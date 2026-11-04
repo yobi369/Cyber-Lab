@@ -93,7 +93,7 @@ The output is a signed statement of event count and audit head. With `--s3-bucke
 Unit and security tests:
 ```bash
 python -m pip install -r requirements-security.txt
-python -m compileall -q admin_lab.py audit_chain.py audit_checkpoint.py security_controls.py oidc.py identity.py storage.py training_platform.py dashboard.py manage_users.py migrate_database.py tests
+python -m compileall -q admin_lab.py audit_chain.py audit_checkpoint.py audit_archiver.py security_controls.py oidc.py identity.py storage.py training_platform.py dashboard.py manage_users.py migrate_database.py tests
 python -m unittest discover -s tests -v
 ```
 Browser tests require Chromium:
@@ -102,7 +102,7 @@ python -m pip install -r requirements-browser-test.txt
 python -m playwright install chromium
 python -m unittest discover -s browser_tests -v
 ```
-GitHub Actions runs Python 3.11/3.12 unit tests and a real Chromium authentication/CSRF integration job.
+GitHub Actions runs Python 3.11/3.12 unit/security tests, Chromium browser tests, dependency vulnerability auditing (`pip-audit`), and CodeQL static analysis.
 
 ## Security status and limitations
 This remains a local prototype pending deployment-specific acceptance. TOTP MFA, OIDC protocol flow, SQLCipher store integration, TLS startup, Secure cookies, nonce CSP, SQLCipher migration/rekey, encrypted recovery helpers and S3 Object Lock checkpoint archiving are implemented and have automated tests. Real IdP registration/credentials, TLS certificates and secret-manager configuration, a real Object Lock bucket, tenant isolation, a witnessed recovery drill, and independent penetration testing plus retest remain release gates. Password recovery codes and a scheduled remote checkpoint service are also not implemented.
