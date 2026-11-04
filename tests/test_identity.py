@@ -34,9 +34,10 @@ class IdentityTests(unittest.TestCase):
    self.store.set_totp_secret("mfauser",secret)
    self.assertIsNone(self.store.authenticate("mfauser","long-enough-password"))
    self.assertIsNone(self.store.authenticate("mfauser","long-enough-password","000000"))
-   login=self.store.authenticate("mfauser","long-enough-password",totp_code(secret))
-   self.assertIsNotNone(login)
-   self.assertIsNone(self.store.authenticate("mfauser","long-enough-password",totp_code(secret)))
+   with patch("identity.matching_totp_counter",return_value=123456):
+    login=self.store.authenticate("mfauser","long-enough-password","123456")
+    self.assertIsNotNone(login)
+    self.assertIsNone(self.store.authenticate("mfauser","long-enough-password","123456"))
  def test_require_mfa_blocks_accounts_without_enrollment(self):
   self.store.create_user("nomfa","long-enough-password","learner")
   with patch.dict(os.environ,{"SENTINEL_REQUIRE_MFA":"1"}):
