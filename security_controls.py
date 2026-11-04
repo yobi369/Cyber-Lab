@@ -52,7 +52,12 @@ def restore_sqlite(backup,destination,encryption_key=None):
  if raw.startswith(marker):
   if encryption_key is None or len(encryption_key)!=32: raise ValueError('encrypted backup requires 32-byte key')
   from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-  nonce=raw[len(marker):len(marker)+12];raw=AESGCM(encryption_key).decrypt(nonce,raw[len(marker)+12:],b'sentinel-backup-v1')
+  nonce=raw[len(marker):len(marker)+12]
+  try: raw=AESGCM(encryption_key).decrypt(nonce,raw[len(marker)+12:],b'sentinel-backup-v1')
+  except Exception as exc:
+   from cryptography.exceptions import InvalidTag
+   if isinstance(exc,InvalidTag): raise ValueError('backup authentication failed: wrong key or corrupted ciphertext') from exc
+   raise
  elif encryption_key is not None: raise ValueError('expected encrypted backup')
  target=Path(destination);target.parent.mkdir(parents=True,exist_ok=True);tmp=target.with_suffix(target.suffix+'.restore-tmp');tmp.write_bytes(raw)
  db=sqlite3.connect(str(tmp))
