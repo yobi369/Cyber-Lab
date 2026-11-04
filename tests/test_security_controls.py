@@ -33,6 +33,9 @@ class SecurityControlTests(unittest.TestCase):
    with patch.dict(os.environ,{"SENTINEL_TLS_CERT":str(cert_path),"SENTINEL_TLS_KEY":str(key_path)}):
     context=tls_context()
    self.assertEqual(context.minimum_version,ssl.TLSVersion.TLSv1_2)
+ def test_production_database_refuses_plaintext_mode(self):
+  with patch.dict(os.environ,{"SENTINEL_ENV":"production"},clear=True):
+   with self.assertRaises(RuntimeError):database_connect(":memory:")
  def test_sqlcipher_never_falls_back_to_plaintext(self):
   with patch.dict(os.environ,{},clear=True):
    with self.assertRaises(RuntimeError): encrypted_sqlite_connect(':memory:')
