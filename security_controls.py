@@ -117,8 +117,18 @@ def rekey_sqlcipher_database(path,old_key,new_key):
         if old_sidecar.exists(): old_sidecar.unlink()
     os.replace(temp,source)
 
+def _configured_backup_key(explicit=None):
+    if explicit is not None: return explicit
+    value=os.getenv("SENTINEL_BACKUP_KEY","")
+    if value:
+        if len(value)!=64 or any(ch not in "0123456789abcdefABCDEF" for ch in value): raise RuntimeError("SENTINEL_BACKUP_KEY must be a 256-bit hex key")
+        return bytes.fromhex(value)
+    if os.getenv("SENTINEL_ENV")=="production": raise RuntimeError("production backups require SENTINEL_BACKUP_KEY")
+    return None
+
 def backup_sqlite(source,destination,encryption_key=None):
-    """Consistent online backup; honors SENTINEL_DB_ENCRYPTION for SQLCipher DBs."""
+    """Consistent online backup; honors SQLCipher and production AES-GCM backup policy."""
+    encryption_key=_configured_backup_key(encryption_key)
     src=database_connect(source)
     target=Path(destination)
     target.parent.mkdir(parents=True,exist_ok=True)
@@ -143,6 +153,7 @@ def backup_sqlite(source,destination,encryption_key=None):
     return hashlib.sha256(raw).hexdigest()
 
 def restore_sqlite(backup,destination,encryption_key=None):
+    encryption_key=_configured_backup_key(encryption_key)
     raw=Path(backup).read_bytes()
     marker=b"SENTINEL-AESGCM-1"
     if raw.startswith(marker):
