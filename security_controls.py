@@ -57,6 +57,7 @@ def encrypted_sqlite_connect(path,timeout=10,key=None):
     if not row or not row[0]:
         db.close()
         raise RuntimeError("SQLCipher encryption unavailable")
+    db.row_factory=sqlcipher.Row
     db.execute("PRAGMA foreign_keys=ON")
     db.execute("PRAGMA journal_mode=WAL")
     return db
@@ -66,7 +67,9 @@ def database_connect(path,timeout=10):
         return encrypted_sqlite_connect(path,timeout)
     if os.getenv("SENTINEL_ENV")=="production":
         raise RuntimeError("production requires SENTINEL_DB_ENCRYPTION=1")
-    return sqlite3.connect(path,timeout=timeout)
+    db=sqlite3.connect(path,timeout=timeout)
+    db.row_factory=sqlite3.Row
+    return db
 
 def migrate_sqlite_to_sqlcipher(source,destination,key):
     """Copy a quiesced plaintext SQLite DB into a new SQLCipher DB."""
