@@ -68,7 +68,15 @@ export SENTINEL_DB_OLD_KEY='<old-64-hex-key>'
 export SENTINEL_DB_KEY='<new-64-hex-key>'
 python migrate_database.py rekey sentinel-lab.encrypted.sqlite3
 ```
-The rekey operation checkpoints WAL, copies into a newly encrypted database, validates integrity using the new key, and atomically replaces the database. Retain the old key until restore validation is complete. Keys must be unique across database, MFA, backup and audit uses.
+The rekey operation checkpoints WAL, copies into a newly encrypted database, validates integrity using the new key, and atomically replaces the database. Retain the old key until restore validation is complete. Keys must be unique across database, MFA, backup and audit uses. Rotate the MFA seed-encryption key with both versions supplied from the secret manager:
+
+```bash
+export SENTINEL_MFA_OLD_ENCRYPTION_KEY='<old-64-hex-key>'
+export SENTINEL_MFA_ENCRYPTION_KEY='<new-64-hex-key>'
+python manage_users.py --db sentinel-lab.sqlite3 rotate-mfa-key
+```
+
+The operation decrypts and re-encrypts every enrolled seed in one database transaction; retain the old key until all accounts have successfully authenticated with the new version.
 
 ## Backup and recovery
 `backup_sqlite()` uses the SQLite/SQLCipher online backup API and honors SENTINEL_DB_ENCRYPTION. Optional AES-256-GCM backup wrapping requires a separate 32-byte backup key. `restore_sqlite()` authenticates encrypted backup bytes, checks database integrity using the configured SQLite/SQLCipher backend, applies restrictive file permissions and atomically installs the restored database.
