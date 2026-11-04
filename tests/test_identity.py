@@ -1,4 +1,6 @@
-import tempfile,unittest
+import tempfile,unittest,os
+from unittest.mock import patch
+from security_controls import new_totp_secret,totp_code
 from pathlib import Path
 from identity import IdentityStore
 
@@ -25,6 +27,19 @@ class IdentityTests(unittest.TestCase):
   self.assertTrue(self.store.login_locked("127.0.0.1"))
   self.store.clear_login_failures("127.0.0.1")
   self.assertFalse(self.store.login_locked("127.0.0.1"))
+ def test_enrolled_mfa_is_required_and_validated(self):
+  self.store.create_user("mfauser","long-enough-password","learner")
+  secret=new_totp_secret()
+  with patch.dict(os.environ,{"SENTINEL_MFA_ENCRYPTION_KEY":"ab"*32}):
+   self.store.set_totp_secret("mfauser",secret)
+   self.assertIsNone(self.store.authenticate("mfauser","long-enough-password"))
+   self.assertIsNone(self.store.authenticate("mfauser","long-enough-password","000000"))
+   login=self.store.authenticate("mfauser","long-enough-password",totp_code(secret))
+   self.assertIsNotNone(login)
+ def test_require_mfa_blocks_accounts_without_enrollment(self):
+  self.store.create_user("nomfa","long-enough-password","learner")
+  with patch.dict(os.environ,{"SENTINEL_REQUIRE_MFA":"1"}):
+   self.assertIsNone(self.store.authenticate("nomfa","long-enough-password"))
  def test_roles_are_provisioned_not_user_selected(self):
   self.store.create_user("reviewer","long-reviewer-password","reviewer")
   self.assertEqual(self.store.list_users()[0]["role"],"reviewer")
