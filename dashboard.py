@@ -6,14 +6,16 @@ from urllib.parse import urlparse,parse_qs
 import json,os,secrets,base64
 from identity import IdentityStore,SESSION_TTL
 from audit_chain import AuditChain
+from audit_archiver import AuditArchiveWorker
 from storage import TrainingStore
 from training_platform import Actor,Role,TrainingPlatform,AuthorizationError
 from security_controls import tls_context,secure_cookie_attributes
 from oidc import oidc_client_from_env,OIDCError
 
 DB=os.getenv("SENTINEL_DB","sentinel-lab.sqlite3")
+AUDIT_PATH=os.getenv("ADMIN_LAB_AUDIT_FILE","training-audit.jsonl")
 IDENTITY=IdentityStore(DB)
-PLATFORM=TrainingPlatform(AuditChain(os.getenv("ADMIN_LAB_AUDIT_FILE","training-audit.jsonl")),TrainingStore(DB))
+PLATFORM=TrainingPlatform(AuditChain(AUDIT_PATH),TrainingStore(DB))
 PAGE="""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sentinel Lab</title>
 <style>
 :root{color-scheme:dark;--bg:#081321;--panel:#12243a;--line:#2a405c;--text:#edf4ff;--muted:#9eb2ca;--accent:#62d8c5}
@@ -148,6 +150,14 @@ class Handler(BaseHTTPRequestHandler):
 def main():
  server=ThreadingHTTPServer((os.getenv("SENTINEL_BIND","127.0.0.1"),int(os.getenv("SENTINEL_PORT","8765"))),Handler)
  context=tls_context()
+ archive_worker=None
+ bucket=os.getenv("SENTINEL_AUDIT_S3_BUCKET")
+ if os.getenv("SENTINEL_REQUIRE_EXTERNAL_AUDIT")=="1" and not bucket: raise RuntimeError("production policy requires SENTINEL_AUDIT_S3_BUCKET")
+ if bucket:
+  secret=os.getenv("SENTINEL_AUDIT_HMAC_KEY","")
+  if len(secret)<32: raise RuntimeError("external audit archiving requires SENTINEL_AUDIT_HMAC_KEY")
+  archive_worker=AuditArchiveWorker(AUDIT_PATH,bucket,secret,os.getenv("SENTINEL_AUDIT_KEY_ID","default"),int(os.getenv("SENTINEL_AUDIT_RETENTION_DAYS","365")),int(os.getenv("SENTINEL_AUDIT_ARCHIVE_INTERVAL_SECONDS","300")))
+  archive_worker.start()
  if context:
   server.socket=context.wrap_socket(server.socket,server_side=True);server.tls_enabled=True
  else:server.tls_enabled=False
@@ -155,5 +165,7 @@ def main():
  print(f"Sentinel Lab: {scheme}://{server.server_address[0]}:{server.server_address[1]} (authenticated sessions)")
  try:server.serve_forever()
  except KeyboardInterrupt:print("\nStopping Sentinel Lab.")
- finally:server.server_close()
+ finally:
+  if archive_worker:archive_worker.stop()
+  server.server_close()
 if __name__=="__main__":main()
