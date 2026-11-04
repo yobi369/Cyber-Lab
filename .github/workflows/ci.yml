@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install security test dependency
+        run: python -m pip install 'cryptography>=42,<47'
       - name: Compile
         run: python -m compileall -q admin_lab.py audit_chain.py audit_checkpoint.py security_controls.py identity.py storage.py training_platform.py dashboard.py manage_users.py tests
       - name: Unit and security tests
