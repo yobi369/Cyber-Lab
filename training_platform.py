@@ -83,7 +83,9 @@ class TrainingPlatform:
   self.audit.append(actor.username,actor.role.value,"evidence.submitted",{"submission_id":sid,"scenario_id":scenario_id,"scenario_version":scenario["version"]})
   return next(x for x in self.store.submissions() if x["id"]==sid)
  def list_submissions(self,actor):
-  self.require(actor,"submission:read");rows=self.store.submissions();\n  for row in rows:row["review_count"]=len(self.store.assessments(row["id"]))\n  return rows
+  self.require(actor,"submission:read");rows=self.store.submissions();
+  for row in rows:row["review_count"]=len(self.store.assessments(row["id"]))
+  return rows
  def grade(self,actor,submission_id,scores,feedback):
   self.require(actor,"assessment:grade")
   submission=next((s for s in self.store.submissions() if s["id"]==submission_id),None)
