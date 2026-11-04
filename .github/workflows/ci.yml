@@ -37,3 +37,15 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Chromium authentication and CSRF tests
         run: python -m unittest discover -s browser_tests -v
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit pinned security dependencies
+        run: |
+          python -m pip install pip-audit
+          pip-audit --requirement requirements-security.txt
