@@ -5,7 +5,7 @@ chooses a role. Passwords use PBKDF2-HMAC-SHA256 with per-user salts.
 """
 from __future__ import annotations
 import hashlib, hmac, secrets, sqlite3, time, os
-from security_controls import verify_totp
+from security_controls import verify_totp, database_connect
 from pathlib import Path
 
 ITERATIONS=310_000
@@ -29,7 +29,7 @@ class IdentityStore:
    columns={row[1] for row in db.execute("PRAGMA table_info(users)")}
    if "mfa_secret" not in columns: db.execute("ALTER TABLE users ADD COLUMN mfa_secret BLOB")
  def connect(self):
-  db=sqlite3.connect(self.path,timeout=10)
+  db=database_connect(self.path,timeout=10)
   db.row_factory=sqlite3.Row
   db.execute("PRAGMA foreign_keys=ON")
   db.execute("PRAGMA journal_mode=WAL")
