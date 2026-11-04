@@ -154,6 +154,9 @@ class Handler(BaseHTTPRequestHandler):
 def main():
  server=ThreadingHTTPServer((os.getenv("SENTINEL_BIND","127.0.0.1"),int(os.getenv("SENTINEL_PORT","8765"))),Handler)
  context=tls_context()
+ secure_cookie_attributes()
+ if os.getenv("SENTINEL_ENV")=="production" and not os.getenv("SENTINEL_PUBLIC_ORIGIN"):
+  raise RuntimeError("production requires exact SENTINEL_PUBLIC_ORIGIN")
  if os.getenv("SENTINEL_REQUIRE_OIDC")=="1":oidc_client_from_env().discovery()
  archive_worker=None
  bucket=os.getenv("SENTINEL_AUDIT_S3_BUCKET")
