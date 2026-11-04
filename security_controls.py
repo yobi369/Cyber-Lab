@@ -95,7 +95,9 @@ def rekey_sqlcipher_database(path,old_key,new_key):
     src=encrypted_sqlite_connect(str(source),key=old_key)
     dst=encrypted_sqlite_connect(str(temp),key=new_key)
     try:
+        src.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         src.backup(dst)
+        dst.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         if dst.execute("PRAGMA integrity_check").fetchone()[0]!="ok":
             raise RuntimeError("rekey verification failed")
     finally:
@@ -106,6 +108,11 @@ def rekey_sqlcipher_database(path,old_key,new_key):
         if check.execute("PRAGMA integrity_check").fetchone()[0]!="ok":
             raise RuntimeError("new database key verification failed")
     finally: check.close()
+    for suffix in ("-wal","-shm"):
+        sidecar=Path(str(temp)+suffix)
+        if sidecar.exists(): sidecar.unlink()
+        old_sidecar=Path(str(source)+suffix)
+        if old_sidecar.exists(): old_sidecar.unlink()
     os.replace(temp,source)
 
 def backup_sqlite(source,destination,encryption_key=None):
