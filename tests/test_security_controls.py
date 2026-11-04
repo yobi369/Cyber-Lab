@@ -1,7 +1,7 @@
 import os,sqlite3,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
-from security_controls import new_totp_secret,totp_code,verify_totp,secure_cookie_attributes,tls_context,backup_sqlite,restore_sqlite,encrypted_sqlite_connect,migrate_sqlite_to_sqlcipher,database_connect
+from security_controls import new_totp_secret,totp_code,verify_totp,secure_cookie_attributes,tls_context,backup_sqlite,restore_sqlite,encrypted_sqlite_connect,migrate_sqlite_to_sqlcipher,database_connect,rekey_sqlcipher_database
 class SecurityControlTests(unittest.TestCase):
  def test_totp_rfc6238_and_validation(self):
   secret='GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
@@ -30,6 +30,10 @@ class SecurityControlTests(unittest.TestCase):
     from identity import IdentityStore
     from storage import TrainingStore
     IdentityStore(str(encrypted));TrainingStore(str(encrypted))
+    rekey_sqlcipher_database(str(encrypted),key,'34'*32)
+    with self.assertRaises(Exception): encrypted_sqlite_connect(str(encrypted),key=key)
+    db=encrypted_sqlite_connect(str(encrypted),key='34'*32);self.assertEqual(db.execute('SELECT value FROM sample').fetchone()[0],'classified');db.close()
+    os.environ['SENTINEL_DB_KEY']='34'*32
     backup=Path(d)/'encrypted-backup.bin';backup_sqlite(str(encrypted),str(backup),b'b'*32)
     restored=Path(d)/'restored-encrypted.db';restore_sqlite(str(backup),str(restored),b'b'*32)
     db=database_connect(str(restored));self.assertEqual(db.execute('SELECT value FROM sample').fetchone()[0],'classified');db.close()
