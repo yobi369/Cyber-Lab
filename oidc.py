@@ -67,6 +67,9 @@ class OIDCClient:
                 options={"require":["exp","iat","iss","aud","sub","nonce"]},leeway=60)
         except Exception as exc:
             raise OIDCError("ID token signature or claims validation failed") from exc
+        audience=claims.get("aud")
+        if isinstance(audience,list) and len(audience)>1 and claims.get("azp")!=self.client_id:
+            raise OIDCError("ID token authorized party validation failed")
         if not secrets.compare_digest(str(claims.get("nonce","")),nonce):
             raise OIDCError("OIDC nonce validation failed")
         if self.tenant_id and claims.get("tid")!=self.tenant_id:
