@@ -22,6 +22,7 @@ Set these environment variables from a secret manager:
 - SENTINEL_OIDC_REDIRECT_URI — exact registered HTTPS callback, `https://your-host/auth/oidc/callback`.
 - Optional SENTINEL_OIDC_TENANT_ID — restrict the token `tid` claim.
 - Optional SENTINEL_OIDC_REQUIRE_MFA=1 — require `amr` to include `mfa`.
+- Optional SENTINEL_REQUIRE_OIDC=1 — validate provider discovery during startup and disable local password login, enforcing enterprise SSO.
 
 Provision and link a user from a trusted terminal after verifying the subject with the IdP administrator:
 ```bash
