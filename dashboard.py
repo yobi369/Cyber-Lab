@@ -65,7 +65,8 @@ def cookie_token(handler):
  c=SimpleCookie();c.load(handler.headers.get("Cookie",""));return c["sentinel_session"].value if "sentinel_session" in c else None
 class Handler(BaseHTTPRequestHandler):
  def send_json(self,status,payload,headers=None):
-  body=json.dumps(payload).encode();self.send_response(status);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Referrer-Policy","no-referrer");
+  body=json.dumps(payload).encode();self.send_response(status);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Referrer-Policy","no-referrer");self.send_header("Permissions-Policy","camera=(), microphone=(), geolocation=()");
+  if getattr(self.server,"tls_enabled",False):self.send_header("Strict-Transport-Security","max-age=31536000; includeSubDomains")
   for k,v in (headers or {}).items():self.send_header(k,v)
   self.end_headers();self.wfile.write(body)
  def session(self):return IDENTITY.session(cookie_token(self))
@@ -95,7 +96,9 @@ class Handler(BaseHTTPRequestHandler):
     self.end_headers();return
    except (OIDCError,ValueError) as exc:return self.send_json(401,{"error":str(exc)})
   if path.path=="/":
-   nonce=base64.urlsafe_b64encode(secrets.token_bytes(24)).decode().rstrip('=');html=PAGE.replace('<style>','<style nonce="'+nonce+'">').replace('<script>','<script nonce="'+nonce+'">');body=html.encode();self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.send_header("Content-Length",str(len(body)));self.send_header("Content-Security-Policy","default-src 'self'; style-src 'nonce-"+nonce+"'; script-src 'nonce-"+nonce+"'; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Referrer-Policy","no-referrer");self.send_header("Cache-Control","no-store");self.end_headers();self.wfile.write(body);return
+   nonce=base64.urlsafe_b64encode(secrets.token_bytes(24)).decode().rstrip('=');html=PAGE.replace('<style>','<style nonce="'+nonce+'">').replace('<script>','<script nonce="'+nonce+'">');body=html.encode();self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.send_header("Content-Length",str(len(body)));self.send_header("Content-Security-Policy","default-src 'self'; style-src 'nonce-"+nonce+"'; script-src 'nonce-"+nonce+"'; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Referrer-Policy","no-referrer");self.send_header("Permissions-Policy","camera=(), microphone=(), geolocation=()");
+   if getattr(self.server,"tls_enabled",False):self.send_header("Strict-Transport-Security","max-age=31536000; includeSubDomains")
+   self.send_header("Cache-Control","no-store");self.end_headers();self.wfile.write(body);return
   if path.path=="/api/me":
    s=self.session()
    return self.send_json(200,{"user":{"username":s["username"],"role":s["role"]},"csrf":s["csrf"]}) if s else self.send_json(401,{"error":"authentication required"})
