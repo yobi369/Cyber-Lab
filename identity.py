@@ -25,6 +25,8 @@ class IdentityStore:
     csrf_hash TEXT NOT NULL, csrf_token TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
    CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
    CREATE TABLE IF NOT EXISTS login_attempts(ip_hash TEXT PRIMARY KEY, window_start INTEGER NOT NULL, failures INTEGER NOT NULL);
+   CREATE TABLE IF NOT EXISTS oidc_transactions(state_hash TEXT PRIMARY KEY, nonce TEXT NOT NULL, code_verifier TEXT NOT NULL, expires_at INTEGER NOT NULL);
+   CREATE TABLE IF NOT EXISTS oidc_subjects(issuer TEXT NOT NULL, subject TEXT NOT NULL, username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE, created_at INTEGER NOT NULL, PRIMARY KEY(issuer,subject));
    """)
    columns={row[1] for row in db.execute("PRAGMA table_info(users)")}
    if "mfa_secret" not in columns: db.execute("ALTER TABLE users ADD COLUMN mfa_secret BLOB")
@@ -104,5 +106,30 @@ class IdentityStore:
  def clear_login_failures(self,remote):
   key=hashlib.sha256(remote.encode()).hexdigest()
   with self.connect() as db:db.execute("DELETE FROM login_attempts WHERE ip_hash=?",(key,))
+ def create_oidc_transaction(self,state,nonce,verifier,ttl=300):
+  now=int(time.time())
+  with self.connect() as db:
+   db.execute("DELETE FROM oidc_transactions WHERE expires_at<?",(now,))
+   db.execute("INSERT INTO oidc_transactions VALUES(?,?,?,?)",(hashlib.sha256(state.encode()).hexdigest(),nonce,verifier,now+ttl))
+ def consume_oidc_transaction(self,state):
+  key=hashlib.sha256(state.encode()).hexdigest();now=int(time.time())
+  with self.connect() as db:
+   row=db.execute("SELECT * FROM oidc_transactions WHERE state_hash=? AND expires_at>=?",(key,now)).fetchone()
+   db.execute("DELETE FROM oidc_transactions WHERE state_hash=?",(key,))
+  return None if not row else {"nonce":row["nonce"],"code_verifier":row["code_verifier"]}
+ def link_oidc_identity(self,username,issuer,subject):
+  if not issuer.startswith("https://") or not subject or len(subject)>512: raise ValueError("invalid OIDC identity")
+  with self.connect() as db:
+   user=db.execute("SELECT active FROM users WHERE username=?",(username,)).fetchone()
+   if not user or not user["active"]: raise ValueError("active local user not found")
+   db.execute("INSERT INTO oidc_subjects VALUES(?,?,?,?)",(issuer,subject,username,int(time.time())))
+ def create_oidc_session(self,issuer,subject):
+  now=int(time.time());token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32)
+  with self.connect() as db:
+   row=db.execute("SELECT u.username,u.role,u.active FROM oidc_subjects o JOIN users u ON u.username=o.username WHERE o.issuer=? AND o.subject=?",(issuer,subject)).fetchone()
+   if not row or not row["active"]: return None
+   db.execute("DELETE FROM sessions WHERE expires_at<?",(now,))
+   db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?)",(hashlib.sha256(token.encode()).hexdigest(),row["username"],hashlib.sha256(csrf.encode()).hexdigest(),csrf,now+SESSION_TTL,now))
+  return {"token":token,"csrf":csrf,"username":row["username"],"role":row["role"],"expires_at":now+SESSION_TTL}
  def list_users(self):
   with self.connect() as db:return [dict(r) for r in db.execute("SELECT username,role,active,created_at FROM users ORDER BY username")]
