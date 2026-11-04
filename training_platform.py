@@ -53,7 +53,7 @@ class TrainingPlatform:
  def publish_scenario(self,actor,scenario_id,version):
   self.require(actor,"scenario:publish")
   item=self.store.scenario(scenario_id,version)
-  if not item:raise ValueError("scenario version not found")
+  if not item or item["status"]!="draft":raise ValueError("only an existing draft version can be published")
   self.store.set_scenario_status(scenario_id,version,"published")
   self.audit.append(actor.username,actor.role.value,"scenario.published",{"scenario_id":scenario_id,"version":version})
   return self.store.scenario(scenario_id,version)
@@ -73,8 +73,8 @@ class TrainingPlatform:
   item.update(objectives=objectives,artifacts=artifacts);return item
  def submit(self,actor,scenario_id,evidence):
   self.require(actor,"submission:create")
-  scenario=self.store.scenario(scenario_id)
-  if not scenario or scenario["status"]!="published":raise ValueError("scenario is not published")
+  scenario=self.store.scenario(scenario_id,published_only=True)
+  if not scenario:raise ValueError("scenario is not published")
   fields=("observations","timeline","actions","rationale","confidence","remediation")
   cleaned={k:str(evidence.get(k,"")).strip() for k in fields}
   if any(not v for v in cleaned.values()):raise ValueError("all evidence fields are required")
