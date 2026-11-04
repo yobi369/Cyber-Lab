@@ -3,11 +3,12 @@ from __future__ import annotations
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse
-import json,os,secrets
+import json,os,secrets,base64
 from identity import IdentityStore,SESSION_TTL
 from audit_chain import AuditChain
 from storage import TrainingStore
 from training_platform import Actor,Role,TrainingPlatform,AuthorizationError
+from security_controls import tls_context,secure_cookie_attributes
 
 DB=os.getenv("SENTINEL_DB","sentinel-lab.sqlite3")
 IDENTITY=IdentityStore(DB)
@@ -61,7 +62,7 @@ def cookie_token(handler):
  c=SimpleCookie();c.load(handler.headers.get("Cookie",""));return c["sentinel_session"].value if "sentinel_session" in c else None
 class Handler(BaseHTTPRequestHandler):
  def send_json(self,status,payload,headers=None):
-  body=json.dumps(payload).encode();self.send_response(status);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Referrer-Policy","no-referrer");self.send_header("Content-Security-Policy","default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'")
+  body=json.dumps(payload).encode();self.send_response(status);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Referrer-Policy","no-referrer");
   for k,v in (headers or {}).items():self.send_header(k,v)
   self.end_headers();self.wfile.write(body)
  def session(self):return IDENTITY.session(cookie_token(self))
@@ -73,7 +74,7 @@ class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   path=urlparse(self.path)
   if path.path=="/":
-   body=PAGE.encode();self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.send_header("Content-Length",str(len(body)));self.send_header("Content-Security-Policy","default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Referrer-Policy","no-referrer");self.end_headers();self.wfile.write(body);return
+   nonce=base64.urlsafe_b64encode(secrets.token_bytes(24)).decode().rstrip('=');html=PAGE.replace('<style>','<style nonce="'+nonce+'">').replace('<script>','<script nonce="'+nonce+'">');body=html.encode();self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.send_header("Content-Length",str(len(body)));self.send_header("Content-Security-Policy","default-src 'self'; style-src 'nonce-"+nonce+"'; script-src 'nonce-"+nonce+"'; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Referrer-Policy","no-referrer");self.send_header("Cache-Control","no-store");self.end_headers();self.wfile.write(body);return
   if path.path=="/api/me":
    s=self.session()
    return self.send_json(200,{"user":{"username":s["username"],"role":s["role"]},"csrf":s["csrf"]}) if s else self.send_json(401,{"error":"authentication required"})
@@ -93,7 +94,8 @@ class Handler(BaseHTTPRequestHandler):
   except (ValueError,TypeError) as e:return self.send_json(400,{"error":str(e)})
  def do_POST(self):
   origin=self.headers.get('Origin')
-  if origin and origin!='http://'+self.headers.get('Host',''):return self.send_json(403,{'error':'origin validation failed'})
+  expected=os.getenv('SENTINEL_PUBLIC_ORIGIN') or (('https://' if getattr(self.server,'tls_enabled',False) else 'http://')+self.headers.get('Host',''))
+  if origin and origin!=expected:return self.send_json(403,{'error':'origin validation failed'})
   path=urlparse(self.path).path
   try:data=self.body()
   except (ValueError,json.JSONDecodeError) as e:return self.send_json(400,{"error":str(e)})
@@ -105,12 +107,12 @@ class Handler(BaseHTTPRequestHandler):
     IDENTITY.record_login_failure(remote)
     return self.send_json(401,{"error":"invalid username or password"})
    IDENTITY.clear_login_failures(remote)
-   return self.send_json(200,{"user":{"username":result["username"],"role":result["role"]},"csrf":result["csrf"]},{"Set-Cookie":f"sentinel_session={result['token']}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_TTL}"})
+   return self.send_json(200,{"user":{"username":result["username"],"role":result["role"]},"csrf":result["csrf"]},{"Set-Cookie":f"sentinel_session={result['token']}; {secure_cookie_attributes()}; Max-Age={SESSION_TTL}"})
   token=cookie_token(self);s=IDENTITY.session(token)
   if not s:return self.send_json(401,{"error":"authentication required"})
   if not IDENTITY.verify_csrf(s,self.headers.get("X-CSRF-Token","")):return self.send_json(403,{"error":"CSRF validation failed"})
   if path=="/api/logout":
-   IDENTITY.logout(token);return self.send_json(200,{"ok":True},{"Set-Cookie":"sentinel_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"})
+   IDENTITY.logout(token);return self.send_json(200,{"ok":True},{"Set-Cookie":"sentinel_session=; "+secure_cookie_attributes()+"; Max-Age=0"})
   a=self.actor(s)
   try:
    if path=="/api/submit":result=PLATFORM.submit(a,data.get("scenario_id",""),data.get("evidence",{}))
@@ -125,8 +127,13 @@ class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
 
 def main():
- server=ThreadingHTTPServer(("127.0.0.1",8765),Handler)
- print("Sentinel Lab: http://127.0.0.1:8765 (authenticated sessions; loopback only)")
+ server=ThreadingHTTPServer((os.getenv("SENTINEL_BIND","127.0.0.1"),int(os.getenv("SENTINEL_PORT","8765"))),Handler)
+ context=tls_context()
+ if context:
+  server.socket=context.wrap_socket(server.socket,server_side=True);server.tls_enabled=True
+ else:server.tls_enabled=False
+ scheme="https" if context else "http"
+ print(f"Sentinel Lab: {scheme}://{server.server_address[0]}:{server.server_address[1]} (authenticated sessions)")
  try:server.serve_forever()
  except KeyboardInterrupt:print("\nStopping Sentinel Lab.")
  finally:server.server_close()
